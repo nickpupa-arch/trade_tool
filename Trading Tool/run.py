@@ -80,13 +80,20 @@ def main() -> None:
     if not args.no_sectors:
         print("Fetching sector ETFs…")
         etf_prices = fetch_prices(list(SECTOR_ETFS),
-                                  cache_dir=CACHE_DIR, cache_minutes=cache_minutes)
+                                  cache_dir=CACHE_DIR, cache_minutes=cache_minutes,
+                                  cache_name="sector_etfs")
         if etf_prices:
             _, sector_etfs = run_screener(etf_prices, spy)
+            # Defensive: only keep rows that are actually sector ETFs.
+            sector_etfs = sector_etfs[sector_etfs["ticker"].isin(SECTOR_ETFS)].copy()
             sector_etfs["sector_name"] = sector_etfs["ticker"].map(SECTOR_ETFS)
-            leader = sector_etfs.iloc[0]
-            print(f"  Sector leader: {leader['ticker']} ({leader['sector_name']})"
-                  f"  3M={leader['ret_3m']*100:+.1f}%")
+            sector_etfs = sector_etfs.reset_index(drop=True)
+            if not sector_etfs.empty:
+                leader = sector_etfs.iloc[0]
+                print(f"  Sector leader: {leader['ticker']} ({leader['sector_name']})"
+                      f"  3M={leader['ret_3m']*100:+.1f}%")
+            else:
+                sector_etfs = None
 
     print(f"Rendering dashboard → {args.out}")
     out = render(regime, results, args.out,

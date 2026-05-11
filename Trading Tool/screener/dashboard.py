@@ -505,7 +505,9 @@ def render(regime: dict,
                 heat = "warm"
             else:
                 heat = "cold"
-            name = s.get("sector_name") or s["ticker"]
+            name = s.get("sector_name")
+            if name is None or pd.isna(name) or not name:
+                name = s["ticker"]
             sectors_html += f"""
             <div class="sector-tile {heat}">
               <div class="s-rank">#{int(s['final_rank'])}</div>

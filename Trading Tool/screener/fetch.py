@@ -34,24 +34,33 @@ def fetch_prices(tickers: list[str],
                  period: str = "14mo",
                  cache_dir: str | Path | None = None,
                  cache_minutes: int = 15,
-                 chunk_size: int = 50) -> dict[str, pd.DataFrame]:
+                 chunk_size: int = 50,
+                 cache_name: str = "prices") -> dict[str, pd.DataFrame]:
     """Download OHLCV history for many tickers.
 
     Returns {ticker: DataFrame} with columns Open/High/Low/Close/Volume.
-    Caches the raw parquet to `cache_dir` and reuses if younger than
-    `cache_minutes` (set to 0 to disable cache).
+    Caches the raw parquet to `cache_dir/{cache_name}.parquet` and reuses
+    if younger than `cache_minutes` (set to 0 to disable cache). Use a
+    distinct `cache_name` per ticker set — otherwise a fetch for one set
+    will reuse stale data from a different set.
     """
     import yfinance as yf  # imported lazily so engine.py doesn't need it
 
+    requested = set(tickers)
     cache_path = None
     if cache_dir:
-        cache_path = Path(cache_dir) / "prices.parquet"
+        cache_path = Path(cache_dir) / f"{cache_name}.parquet"
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         if cache_path.exists() and cache_minutes > 0:
             age_min = (time.time() - cache_path.stat().st_mtime) / 60
             if age_min < cache_minutes:
                 df = pd.read_parquet(cache_path)
-                return _split_by_ticker(df)
+                cached = _split_by_ticker(df)
+                # Only use cache if it covers all the tickers we asked for.
+                # Prevents a previous run's larger universe from masking a
+                # smaller, different request (e.g. sector ETFs).
+                if requested.issubset(cached.keys()):
+                    return {t: cached[t] for t in cached if t in requested}
 
     # Download in chunks to be polite & robust
     frames = []
