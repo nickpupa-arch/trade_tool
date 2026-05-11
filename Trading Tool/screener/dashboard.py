@@ -299,6 +299,39 @@ td.neg { color: var(--sell); }
 .card .meta { display: flex; gap: 10px; font-size: 11px; color: var(--text-dim); }
 .card .meta b { color: var(--text); font-weight: 600; }
 
+/* ---- SECTOR TILES ---- */
+.sectors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.sector-tile {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  position: relative;
+}
+.sector-tile.hot   { border-left-color: var(--buy); }
+.sector-tile.warm  { border-left-color: var(--hold); }
+.sector-tile.cool  { border-left-color: var(--watch); }
+.sector-tile.cold  { border-left-color: var(--sell); }
+.sector-tile .s-rank {
+  position: absolute; top: 8px; right: 10px;
+  color: var(--text-faint); font-size: 11px; font-weight: 600;
+}
+.sector-tile .s-name { font-size: 13px; font-weight: 600; margin-bottom: 6px; padding-right: 28px; }
+.sector-tile .s-score { font-size: 18px; font-weight: 700; }
+.sector-tile .s-meta {
+  display: flex; gap: 8px; margin-top: 4px;
+  font-size: 11px; color: var(--text-dim);
+}
+.sector-tile .s-meta b { color: var(--text); font-weight: 600; }
+.sector-tile .s-top { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+.sector-tile .s-top b { color: var(--accent); }
+
 /* ---- Responsive ---- */
 @media (max-width: 700px) {
   .topnav { padding: 10px 12px; gap: 12px; }
@@ -420,7 +453,8 @@ def _action_badge(a: str) -> str:
 def render(regime: dict,
            df: pd.DataFrame,
            out_path: str | Path,
-           generated_at: dt.datetime | None = None) -> Path:
+           generated_at: dt.datetime | None = None,
+           sectors: pd.DataFrame | None = None) -> Path:
     """Render the full HTML dashboard and write it to out_path."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -437,6 +471,33 @@ def render(regime: dict,
         "Mixed": "mixed",
         "Defensive": "defensive",
     }.get(regime["regime"], "")
+
+    # ---- Sector tiles ----
+    sectors_html = ""
+    if sectors is not None and not sectors.empty:
+        n = len(sectors)
+        for i, s in sectors.iterrows():
+            if i < n * 0.25:
+                heat = "hot"
+            elif i < n * 0.5:
+                heat = "warm"
+            elif i < n * 0.75:
+                heat = "cool"
+            else:
+                heat = "cold"
+            sectors_html += f"""
+            <div class="sector-tile {heat}">
+              <div class="s-rank">#{int(s['rank'])}</div>
+              <div class="s-name">{s['sector']}</div>
+              <div class="s-score">{_fmt_pct(s['avg_3m'])}<span style="font-size:11px;color:var(--text-faint);font-weight:500"> 3M avg</span></div>
+              <div class="s-meta">
+                <span><b>{int(s['n'])}</b> names</span>
+                <span><b>{int(s['buys'])}</b> buy</span>
+                <span><b>{int(s['holds'])}</b> hold</span>
+              </div>
+              <div class="s-top">Top: <b>{s['top_ticker']}</b> #{int(s['top_ticker_rank'])}</div>
+            </div>
+            """
 
     # ---- Top action picks (cards) ----
     top_picks = df[df["action"].isin([
@@ -542,6 +603,9 @@ def render(regime: dict,
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Trading Tool">
   <meta name="description" content="Self-hosted dashboard for real-time stock trend scanning — informs, never executes.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
   <style>{CSS}</style>
 </head>
 <body>
@@ -550,6 +614,7 @@ def render(regime: dict,
   <div class="brand">Trading<span>Tool</span></div>
   <div class="links">
     <a href="#" class="active">Scanner</a>
+    <a href="#sectors">Sectors</a>
     <a href="#top-picks">Top Picks</a>
     <a href="#methodology">Methodology</a>
     <a href="https://finance.yahoo.com" target="_blank">Yahoo</a>
@@ -599,6 +664,8 @@ def render(regime: dict,
       <div class="value" style="font-size:14px">{regime['sizing']}</div>
     </div>
   </section>
+
+  {('<h2 id="sectors">Sector rankings</h2>' + '<p class="subtitle">Sectors ordered by average Leadership score. Hot &rarr; cold heat shading.</p>' + f'<div class="sectors">{sectors_html}</div>') if sectors_html else ''}
 
   <h2 id="top-picks">Top action picks</h2>
   <p class="subtitle">Highest-ranked names currently flashing ACTION BUY, STARTER / SCALE-IN, or BUYABLE WATCH.</p>
@@ -650,12 +717,17 @@ def render(regime: dict,
 
 <nav class="bottomnav">
   <a href="#" class="active">Scanner</a>
+  <a href="#sectors">Sectors</a>
   <a href="#top-picks">Picks</a>
   <a href="#methodology">How</a>
-  <a href="https://finance.yahoo.com" target="_blank">Yahoo</a>
 </nav>
 
 <script>{JS}</script>
+<script>
+  if ('serviceWorker' in navigator) {{
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {{}}));
+  }}
+</script>
 </body>
 </html>
 """

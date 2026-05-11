@@ -7,6 +7,7 @@ Usage:
     python run.py --no-open       # build dashboard but don't auto-open in browser
     python run.py --watchlist watchlist.txt   # include user watchlist tickers
     python run.py --fresh         # ignore cache, force fresh download
+    python run.py --no-sectors    # skip sector lookup (faster first run)
 """
 from __future__ import annotations
 
@@ -16,8 +17,8 @@ import webbrowser
 from pathlib import Path
 
 from screener.universe import load_universe
-from screener.fetch import fetch_prices, fetch_benchmark, filter_by_liquidity
-from screener.engine import run_screener
+from screener.fetch import fetch_prices, fetch_benchmark, filter_by_liquidity, fetch_sector_info
+from screener.engine import run_screener, attach_sectors, sector_rankings
 from screener.dashboard import render
 
 
@@ -38,6 +39,8 @@ def main() -> None:
                     help="Ignore cache and re-download all prices")
     ap.add_argument("--out", default=str(OUT_PATH),
                     help="Output HTML path (default ./dashboard.html)")
+    ap.add_argument("--no-sectors", action="store_true",
+                    help="Skip the sector lookup (faster, no Sector Rankings panel)")
     args = ap.parse_args()
 
     cache_minutes = 0 if args.fresh else 15
@@ -67,8 +70,18 @@ def main() -> None:
           f", {(results['action'] == '2 STARTER / SCALE-IN').sum()} STARTERS"
           f", {(results['action'] == '3 BUYABLE WATCH').sum()} BUYABLE WATCH")
 
+    sectors = None
+    if not args.no_sectors and not results.empty:
+        print("Looking up sectors…")
+        sector_map = fetch_sector_info(results["ticker"].tolist(), cache_dir=CACHE_DIR)
+        results = attach_sectors(results, sector_map)
+        sectors = sector_rankings(results)
+        top3 = ", ".join(sectors.head(3)["sector"].tolist()) if not sectors.empty else "—"
+        print(f"  Sectors ranked: {len(sectors)}  |  Top 3 by leadership: {top3}")
+
     print(f"Rendering dashboard → {args.out}")
-    out = render(regime, results, args.out, generated_at=dt.datetime.now())
+    out = render(regime, results, args.out,
+                 generated_at=dt.datetime.now(), sectors=sectors)
 
     # Also save the raw results to CSV so you can do your own analysis
     csv_out = Path(args.out).with_suffix(".csv")

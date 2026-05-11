@@ -1,0 +1,19 @@
+{
+  "name": "Trading Tool — Trend Scanner",
+  "short_name": "Trading Tool",
+  "description": "Self-hosted dashboard for real-time stock trend scanning.",
+  "start_url": "./dashboard.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0F172A",
+  "theme_color": "#0F172A",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
