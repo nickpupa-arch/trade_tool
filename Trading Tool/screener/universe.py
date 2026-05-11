@@ -63,6 +63,23 @@ NASDAQ100 = [
     "TSLA","TTD","TTWO","TXN","VRSK","VRTX","WBD","WDAY","XEL","ZS",
 ]
 
+# Recent IPOs, spin-offs, and SP500 additions not yet in the snapshots above.
+# Add to this list as new names emerge — keeps the original index lists clean.
+RECENT_ADDITIONS = [
+    "SNDK",   # SanDisk re-listing (Feb 2025) after WDC split
+    "LLY",    # Eli Lilly — long-time SP500, missing from the snapshot above
+    "APO",    # Apollo Global Management (SP500 since Dec 2024)
+    "GEV",    # GE Vernova (spun off from GE, April 2024)
+    "DELL",   # Dell Technologies (SP500 since Sept 2024)
+    "COIN",   # Coinbase (SP500 since May 2025)
+    "HOOD",   # Robinhood Markets
+    "IBKR",   # Interactive Brokers
+    "VRT",    # Vertiv Holdings (data-center infrastructure)
+    "VICI",   # VICI Properties (gaming REIT)
+    "LII",    # Lennox International
+    "TKO",    # TKO Group Holdings (UFC + WWE)
+]
+
 
 def load_universe(name: str = "sp500_nasdaq100",
                   watchlist_file: str | Path | None = None) -> list[str]:
@@ -78,11 +95,11 @@ def load_universe(name: str = "sp500_nasdaq100",
     """
     name = name.lower()
     if name == "sp500":
-        tickers = list(SP500)
+        tickers = list(SP500) + list(RECENT_ADDITIONS)
     elif name == "nasdaq100":
         tickers = list(NASDAQ100)
     else:
-        tickers = list(dict.fromkeys(SP500 + NASDAQ100))  # de-dupe, keep order
+        tickers = list(dict.fromkeys(SP500 + NASDAQ100 + RECENT_ADDITIONS))
 
     if watchlist_file:
         p = Path(watchlist_file)
