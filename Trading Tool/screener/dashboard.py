@@ -218,6 +218,28 @@ tr:hover td { background: rgba(56, 189, 248, 0.05); }
 td.pos { color: var(--buy); }
 td.neg { color: var(--sell); }
 
+a.trade {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px; font-weight: 600;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  border-radius: 4px;
+  text-decoration: none;
+}
+a.trade:hover { background: var(--accent); color: var(--bg); text-decoration: none; }
+.card a.trade-cta {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 5px 10px;
+  font-size: 11px; font-weight: 600;
+  background: var(--accent); color: var(--bg);
+  border-radius: 4px;
+  text-decoration: none;
+}
+.card a.trade-cta:hover { background: var(--buy); text-decoration: none; }
+
 .signal-badge, .action-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -544,6 +566,7 @@ def render(regime: dict,
             <span>Ext <b>{_fmt_num(r['extension_ratio'])}</b></span>
             <span>{_signal_badge(r['signal'])}</span>
           </div>
+          <a class="trade-cta" href="https://digital.fidelity.com/prgw/digital/trade-equity/?symbol={r['ticker']}" target="_blank">Trade {r['ticker']} in Fidelity ↗</a>
         </div>
         """
 
@@ -599,7 +622,8 @@ def render(regime: dict,
             elif fmt == "num2":
                 cell = _fmt_num(v, 2)
             elif fmt == "ticker":
-                cell = f'<a href="https://finance.yahoo.com/quote/{v}" target="_blank">{v}</a>'
+                cell = (f'<a href="https://finance.yahoo.com/quote/{v}" target="_blank">{v}</a>'
+                        f'<a class="trade" href="https://digital.fidelity.com/prgw/digital/trade-equity/?symbol={v}" target="_blank" title="Trade {v} in Fidelity">Trade&nbsp;↗</a>')
             else:
                 cell = str(v) if v else "—"
             td_cls = "ticker" if key == "ticker" else ""
@@ -620,6 +644,7 @@ def render(regime: dict,
   <title>Trading Tool — Trend Scanner</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0F172A">
+  <meta http-equiv="refresh" content="300">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Trading Tool">

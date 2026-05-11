@@ -4,3 +4,4 @@ __pycache__/
 .cache/
 dashboard.html
 dashboard.csv
+_site/
