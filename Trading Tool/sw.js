@@ -1,5 +1,5 @@
 const CACHE = 'trading-tool-v1';
-const ASSETS = ['./dashboard.html', './manifest.webmanifest', './icon.svg'];
+const ASSETS = ['./dashboard.html', './how-to.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).catch(() => {}));

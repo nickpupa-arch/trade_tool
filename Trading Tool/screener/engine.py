@@ -219,6 +219,22 @@ def compute_scores(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def compute_raw_score(df: pd.DataFrame) -> pd.DataFrame:
+    """The simpler 'Rankings' tab score: pure return-weighted.
+
+    Score = 3M*0.35 + 6M*0.35 + 12M*0.20 + RS_3M*0.10  (Excel `Rankings!M`)
+    Ranked descending (highest score = rank 1).
+    """
+    df["raw_score"] = (
+        df["ret_3m"].fillna(0) * 0.35
+        + df["ret_6m"].fillna(0) * 0.35
+        + df["ret_12m"].fillna(0) * 0.20
+        + df["rs_3m_vs_spy"].fillna(0) * 0.10
+    )
+    df["raw_rank"] = _rank_ascending(df["raw_score"])
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Signal & Action (matches Excel S2 / AK2 / AL2 formulas)
 # ---------------------------------------------------------------------------
@@ -277,52 +293,6 @@ def _action(rule_check: str, signal: str, setup: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Sector aggregation
-# ---------------------------------------------------------------------------
-def attach_sectors(df: pd.DataFrame,
-                   sector_map: dict[str, dict] | None) -> pd.DataFrame:
-    """Add a `sector` column to the results frame using sector_map from fetch."""
-    def lookup(t):
-        if not sector_map:
-            return "Unknown"
-        return (sector_map.get(t) or {}).get("sector") or "Unknown"
-    df = df.copy()
-    df["sector"] = df["ticker"].map(lookup)
-    return df
-
-
-def sector_rankings(df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate scored results into one row per sector, ranked by avg leadership."""
-    if "sector" not in df.columns or df.empty:
-        return pd.DataFrame()
-
-    agg = df.groupby("sector").agg(
-        n=("ticker", "count"),
-        avg_leadership=("leadership_score", "mean"),
-        avg_momentum=("momentum_score", "mean"),
-        avg_3m=("ret_3m", "mean"),
-        avg_12m=("ret_12m", "mean"),
-        avg_above_20sma=("above_20sma_pct", "mean"),
-        buys=("signal", lambda s: (s == "BUY").sum()),
-        holds=("signal", lambda s: (s == "HOLD").sum()),
-        watches=("signal", lambda s: (s == "WATCH").sum()),
-        sells=("signal", lambda s: (s == "SELL").sum()),
-    ).reset_index()
-
-    top = (
-        df.sort_values("final_rank")
-          .groupby("sector")
-          .first()[["ticker", "final_rank"]]
-          .rename(columns={"ticker": "top_ticker", "final_rank": "top_ticker_rank"})
-    )
-    agg = agg.merge(top, on="sector", how="left")
-
-    agg = agg.sort_values("avg_leadership", ascending=False).reset_index(drop=True)
-    agg["rank"] = agg.index + 1
-    return agg
-
-
-# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 def run_screener(price_data: dict[str, pd.DataFrame],
@@ -350,6 +320,7 @@ def run_screener(price_data: dict[str, pd.DataFrame],
 
     df = pd.DataFrame(rows)
     df = compute_scores(df)
+    df = compute_raw_score(df)
 
     df["rule_check"] = df.apply(
         lambda r: _rule_check(r["live_price"], r["ma50"], r["ma200"]), axis=1

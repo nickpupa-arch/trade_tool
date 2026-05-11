@@ -454,7 +454,7 @@ def render(regime: dict,
            df: pd.DataFrame,
            out_path: str | Path,
            generated_at: dt.datetime | None = None,
-           sectors: pd.DataFrame | None = None) -> Path:
+           sector_etfs: pd.DataFrame | None = None) -> Path:
     """Render the full HTML dashboard and write it to out_path."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -472,30 +472,50 @@ def render(regime: dict,
         "Defensive": "defensive",
     }.get(regime["regime"], "")
 
-    # ---- Sector tiles ----
+    # ---- Sector ETF tiles (port of Excel "Sector Rankings" tab) ----
     sectors_html = ""
-    if sectors is not None and not sectors.empty:
-        n = len(sectors)
-        for i, s in sectors.iterrows():
-            if i < n * 0.25:
+    if sector_etfs is not None and not sector_etfs.empty:
+        n = len(sector_etfs)
+        for i, s in sector_etfs.iterrows():
+            if i < n * 0.34:
                 heat = "hot"
-            elif i < n * 0.5:
+            elif i < n * 0.67:
                 heat = "warm"
-            elif i < n * 0.75:
-                heat = "cool"
             else:
                 heat = "cold"
+            name = s.get("sector_name") or s["ticker"]
             sectors_html += f"""
             <div class="sector-tile {heat}">
-              <div class="s-rank">#{int(s['rank'])}</div>
-              <div class="s-name">{s['sector']}</div>
-              <div class="s-score">{_fmt_pct(s['avg_3m'])}<span style="font-size:11px;color:var(--text-faint);font-weight:500"> 3M avg</span></div>
+              <div class="s-rank">#{int(s['final_rank'])}</div>
+              <div class="s-name">{name}<span style="color:var(--text-faint);font-weight:500;font-size:11px"> ({s['ticker']})</span></div>
+              <div class="s-score">{_fmt_pct(s['ret_3m'])}<span style="font-size:11px;color:var(--text-faint);font-weight:500"> 3M</span></div>
               <div class="s-meta">
-                <span><b>{int(s['n'])}</b> names</span>
-                <span><b>{int(s['buys'])}</b> buy</span>
-                <span><b>{int(s['holds'])}</b> hold</span>
+                <span class="{_pct_class(s['ret_5d'])}">5D {_fmt_pct(s['ret_5d'])}</span>
+                <span class="{_pct_class(s['above_20sma_pct'])}">vs 20D {_fmt_pct(s['above_20sma_pct'])}</span>
               </div>
-              <div class="s-top">Top: <b>{s['top_ticker']}</b> #{int(s['top_ticker_rank'])}</div>
+              <div class="s-top">{_signal_badge(s['signal'])}<span style="margin-left:6px;color:var(--text-faint)">{s['trade_setup'] or '—'}</span></div>
+            </div>
+            """
+
+    # ---- Top "raw score" picks (port of Excel "Rankings" tab) ----
+    raw_top_html = ""
+    if "raw_rank" in df.columns:
+        raw_top = df.sort_values("raw_rank").head(5)
+        for _, r in raw_top.iterrows():
+            raw_top_html += f"""
+            <div class="card">
+              <div class="top">
+                <div>
+                  <div class="tkr">{r['ticker']}</div>
+                  <div class="desc-sm">Raw score #{int(r['raw_rank'])} &middot; {_fmt_num(r['raw_score'], 2)}</div>
+                </div>
+              </div>
+              <div class="price">{_fmt_money(r['live_price'])}</div>
+              <div class="meta">
+                <span>3M <b class="{_pct_class(r['ret_3m'])}">{_fmt_pct(r['ret_3m'])}</b></span>
+                <span>6M <b class="{_pct_class(r['ret_6m'])}">{_fmt_pct(r['ret_6m'])}</b></span>
+                <span>12M <b class="{_pct_class(r['ret_12m'])}">{_fmt_pct(r['ret_12m'])}</b></span>
+              </div>
             </div>
             """
 
@@ -547,6 +567,7 @@ def render(regime: dict,
         ("Lead Rank",     "leadership_rank",         "number", "int"),
         ("Mom Rank",      "momentum_rank",           "number", "int"),
         ("Final Rank",    "final_rank",              "number", "int"),
+        ("Raw Rank",      "raw_rank",                "number", "int"),
         ("vs MAs",        "rule_check",              "string", None),
     ]
     th_html = ""
@@ -616,8 +637,9 @@ def render(regime: dict,
     <a href="#" class="active">Scanner</a>
     <a href="#sectors">Sectors</a>
     <a href="#top-picks">Top Picks</a>
+    <a href="#raw-score">Raw Score</a>
+    <a href="how-to.html">How to use</a>
     <a href="#methodology">Methodology</a>
-    <a href="https://finance.yahoo.com" target="_blank">Yahoo</a>
   </div>
   <div class="statuschips">
     <span class="chip {chips_cls} active">{regime['regime']}</span>
@@ -665,11 +687,13 @@ def render(regime: dict,
     </div>
   </section>
 
-  {('<h2 id="sectors">Sector rankings</h2>' + '<p class="subtitle">Sectors ordered by average Leadership score. Hot &rarr; cold heat shading.</p>' + f'<div class="sectors">{sectors_html}</div>') if sectors_html else ''}
+  {('<h2 id="sectors">Sector rankings</h2>' + '<p class="subtitle">11 SPDR sector ETFs run through the same screener. Top tile = strongest sector. Use it to spot regime rotation before individual names.</p>' + f'<div class="sectors">{sectors_html}</div>') if sectors_html else ''}
 
   <h2 id="top-picks">Top action picks</h2>
   <p class="subtitle">Highest-ranked names currently flashing ACTION BUY, STARTER / SCALE-IN, or BUYABLE WATCH.</p>
   <div class="cards">{cards_html or '<div class="card"><div class="desc-sm">No actionable picks right now — market may be defensive or extended. Check back later.</div></div>'}</div>
+
+  {('<h2 id="raw-score">Top by raw Score</h2>' + '<p class="subtitle">Pure return-weighted leaderboard (3M*0.35 + 6M*0.35 + 12M*0.2 + RS*0.1). No entry-quality penalty. Lots of overlap with action picks, but flags extended names too.</p>' + f'<div class="cards">{raw_top_html}</div>') if raw_top_html else ''}
 
   <h2>Full scanner</h2>
   <div class="filters">
@@ -719,7 +743,7 @@ def render(regime: dict,
   <a href="#" class="active">Scanner</a>
   <a href="#sectors">Sectors</a>
   <a href="#top-picks">Picks</a>
-  <a href="#methodology">How</a>
+  <a href="how-to.html">How</a>
 </nav>
 
 <script>{JS}</script>

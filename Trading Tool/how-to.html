@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Trading Tool — How to use</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0F172A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Trading Tool">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <style>
+:root {
+  --bg: #0F172A; --bg-elev: #1E293B; --bg-elev-2: #334155;
+  --border: #334155;
+  --text: #F1F5F9; --text-dim: #94A3B8; --text-faint: #64748B;
+  --accent: #38BDF8;
+  --buy: #22C55E; --hold: #84CC16; --watch: #F59E0B; --sell: #EF4444;
+  --action1: #16A34A; --action2: #84CC16; --action3: #38BDF8;
+  --action4: #0EA5E9; --action5: #A855F7; --action6: #F59E0B;
+  --action7: #F97316; --action8: #475569;
+  --code-bg: #020617;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, kbd, pre {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+}
+
+/* ---- TOP NAV (matches dashboard) ---- */
+.topnav {
+  display: flex; align-items: center; gap: 24px;
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  background: var(--bg); position: sticky; top: 0; z-index: 50;
+  flex-wrap: wrap;
+}
+.brand { font-weight: 700; font-size: 17px; }
+.brand span { color: var(--accent); }
+.topnav .links { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+.topnav .links a {
+  padding: 6px 12px; border-radius: 6px;
+  color: var(--text-dim); font-size: 14px; font-weight: 500;
+}
+.topnav .links a.active { background: var(--bg-elev); color: var(--text); }
+.topnav .links a:hover { color: var(--text); text-decoration: none; }
+
+main { padding: 24px 20px 100px; max-width: 1100px; margin: 0 auto; }
+
+/* ---- HERO ---- */
+.hero {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 32px;
+  padding: 28px;
+  background: linear-gradient(135deg, var(--bg-elev) 0%, #0B1224 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-bottom: 28px;
+}
+.hero h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.01em; }
+.hero h1 span { color: var(--accent); }
+.hero .lede { color: var(--text-dim); font-size: 15px; max-width: 650px; }
+.hero .stamp { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+.hero-icon { width: 96px; height: 96px; opacity: 0.85; }
+@media (max-width: 600px) {
+  .hero { grid-template-columns: 1fr; padding: 20px; }
+  .hero-icon { width: 64px; height: 64px; }
+  .hero h1 { font-size: 24px; }
+}
+
+/* ---- SECTION ---- */
+section { margin-bottom: 36px; }
+.section-head {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 16px;
+}
+.section-head .num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--accent); color: var(--bg);
+  font-weight: 700; font-size: 14px;
+}
+.section-head h2 { font-size: 22px; font-weight: 700; }
+.section-head .sub { color: var(--text-dim); font-size: 13px; flex: 1; }
+
+/* ---- CARDS ---- */
+.cards {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  display: flex; flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+.card.accent { border-left: 3px solid var(--accent); }
+.card .icon { width: 28px; height: 28px; color: var(--accent); margin-bottom: 4px; }
+.card h3 { font-size: 15px; font-weight: 600; }
+.card p, .card li { color: var(--text-dim); font-size: 13px; }
+.card ul { padding-left: 18px; }
+.card .badge {
+  position: absolute; top: 14px; right: 14px;
+  font-size: 11px; color: var(--text-faint); font-weight: 600;
+  background: var(--bg-elev-2); padding: 2px 8px; border-radius: 999px;
+}
+
+/* ---- CODE ---- */
+pre.code {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  color: var(--text);
+  margin: 8px 0;
+}
+.code .c { color: var(--text-faint); }
+.code .k { color: var(--watch); }
+.code .s { color: var(--buy); }
+kbd {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+/* ---- ACTION LADDER ---- */
+.ladder { display: flex; flex-direction: column; gap: 6px; }
+.ladder-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr;
+  align-items: center;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  gap: 14px;
+}
+.ladder-row .pill {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
+  padding: 4px 10px; border-radius: 4px; text-align: center;
+}
+.pill-1 { background: var(--action1); color: var(--bg); }
+.pill-2 { background: var(--action2); color: var(--bg); }
+.pill-3 { background: var(--action3); color: var(--bg); }
+.pill-4 { background: var(--action4); color: var(--bg); }
+.pill-5 { background: var(--action5); color: var(--text); }
+.pill-6 { background: var(--action6); color: var(--bg); }
+.pill-7 { background: var(--action7); color: var(--bg); }
+.pill-8 { background: var(--action8); color: var(--text-dim); }
+.ladder-row .desc { color: var(--text); font-size: 13px; font-weight: 600; }
+.ladder-row .rule { color: var(--text-dim); font-size: 12px; }
+@media (max-width: 700px) {
+  .ladder-row { grid-template-columns: 70px 1fr; }
+  .ladder-row .rule { grid-column: 2; padding-top: 2px; }
+}
+
+/* ---- REGIME TABLE ---- */
+.regime-table { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.regime-col {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 10px; padding: 16px;
+}
+.regime-col.r-on { border-top-color: var(--buy); }
+.regime-col.r-mix { border-top-color: var(--watch); }
+.regime-col.r-def { border-top-color: var(--sell); }
+.regime-col h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+.regime-col h4.r-on { color: var(--buy); }
+.regime-col h4.r-mix { color: var(--watch); }
+.regime-col h4.r-def { color: var(--sell); }
+.regime-col .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.regime-col .kv:last-child { border-bottom: none; }
+.regime-col .kv span:first-child { color: var(--text-dim); }
+.regime-col .kv span:last-child { color: var(--text); font-weight: 600; }
+@media (max-width: 700px) { .regime-table { grid-template-columns: 1fr; } }
+
+/* ---- GLOSSARY ---- */
+.glossary {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px 0;
+}
+.gloss-row {
+  display: grid; grid-template-columns: 180px 1fr;
+  gap: 16px; padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.gloss-row:last-child { border-bottom: none; }
+.gloss-row .term { font-weight: 600; color: var(--accent); font-size: 13px; }
+.gloss-row .def { color: var(--text-dim); font-size: 13px; }
+.gloss-row .def code { color: var(--text); background: var(--code-bg); padding: 1px 6px; border-radius: 3px; }
+@media (max-width: 600px) { .gloss-row { grid-template-columns: 1fr; gap: 2px; } }
+
+/* ---- FLOW ---- */
+.flow {
+  display: flex; gap: 14px; flex-wrap: wrap; align-items: stretch;
+  padding: 4px 0;
+}
+.flow-step {
+  flex: 1; min-width: 180px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  position: relative;
+}
+.flow-step::after {
+  content: "→";
+  position: absolute; right: -16px; top: 50%; transform: translateY(-50%);
+  color: var(--text-faint); font-size: 18px;
+}
+.flow-step:last-child::after { display: none; }
+.flow-step .step-num {
+  display: inline-block; background: var(--accent); color: var(--bg);
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+  margin-bottom: 6px;
+}
+.flow-step h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.flow-step p { color: var(--text-dim); font-size: 12px; }
+@media (max-width: 700px) {
+  .flow-step::after { content: "↓"; right: 50%; transform: translateX(50%); top: auto; bottom: -16px; }
+}
+
+/* ---- CALLOUT ---- */
+.callout {
+  border-left: 3px solid var(--watch);
+  background: var(--bg-elev);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 16px 0;
+  display: grid; grid-template-columns: 28px 1fr; gap: 12px;
+  align-items: flex-start;
+}
+.callout svg { width: 22px; height: 22px; color: var(--watch); }
+.callout p { color: var(--text-dim); font-size: 13px; }
+.callout p b { color: var(--text); }
+
+/* ---- FOOTER ---- */
+.footer-disclaimer {
+  margin-top: 40px; padding: 16px;
+  background: var(--bg-elev);
+  border-left: 3px solid var(--watch);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+  </style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="brand">Trading<span>Tool</span></div>
+  <div class="links">
+    <a href="dashboard.html">Scanner</a>
+    <a href="dashboard.html#sectors">Sectors</a>
+    <a href="dashboard.html#top-picks">Top Picks</a>
+    <a href="#" class="active">How to use</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- ============================ HERO ============================ -->
+<div class="hero">
+  <div>
+    <div class="stamp">Trend-following stock screener · self-hosted · informational</div>
+    <h1>How to use <span>Trading Tool</span></h1>
+    <p class="lede">
+      A weekly-or-monthly trend-following workflow ported from a Google Sheets screener.
+      The tool ranks ~500 large-cap US stocks, tells you which ones meet the buy rules,
+      and gives a regime call for sizing. You place the trades. It never does.
+    </p>
+  </div>
+  <svg class="hero-icon" viewBox="0 0 100 100" fill="none">
+    <rect width="100" height="100" rx="18" fill="#1E293B" stroke="#334155"/>
+    <path d="M14 75 L36 50 L52 62 L74 32 L88 44"
+          stroke="#38BDF8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <circle cx="74" cy="32" r="5" fill="#22C55E"/>
+    <circle cx="36" cy="50" r="4" fill="#F1F5F9"/>
+  </svg>
+</div>
+
+<!-- ============================ TL;DR ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">·</span>
+    <h2>The 30-second pitch</h2>
+    <span class="sub">If you read nothing else.</span>
+  </div>
+  <div class="cards">
+    <div class="card accent">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+      <h3>What it does</h3>
+      <p>Pulls 14 months of daily prices for ~500 US large-caps, computes trend &amp; momentum metrics, scores and ranks them, and renders a dashboard. Output: a list of names worth buying, holding, watching, or selling.</p>
+    </div>
+    <div class="card accent">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      <h3>When to run it</h3>
+      <p>Weekly or monthly. Monthly is simpler and reduces churn. Run on a Sunday evening before the trading week to plan adjustments.</p>
+    </div>
+    <div class="card accent">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l5 5L20 7"/></svg>
+      <h3>How to trade it</h3>
+      <p>Buy the top-ranked names flagged <b>1&nbsp;ACTION&nbsp;BUY</b>. Hold while the rank + trend stays favorable (1–6 months typical). Sell on rank decay or breach of the 50-day MA.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ FLOW ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">1</span>
+    <h2>The weekly workflow</h2>
+    <span class="sub">~5 minutes once data is cached.</span>
+  </div>
+  <div class="flow">
+    <div class="flow-step">
+      <span class="step-num">RUN</span>
+      <h4>Open terminal, run the tool</h4>
+      <p><code>python run.py</code> in the Trading&nbsp;Tool folder.</p>
+    </div>
+    <div class="flow-step">
+      <span class="step-num">READ</span>
+      <h4>Check the regime</h4>
+      <p>Risk On / Mixed / Defensive sets your max exposure for the week.</p>
+    </div>
+    <div class="flow-step">
+      <span class="step-num">PICK</span>
+      <h4>Pull names from the cards</h4>
+      <p>Top action picks panel shows the cleanest setups.</p>
+    </div>
+    <div class="flow-step">
+      <span class="step-num">SIZE</span>
+      <h4>Size by regime</h4>
+      <p>Risk On = 5–8 names, Mixed = 3–5, Defensive = 0–2.</p>
+    </div>
+    <div class="flow-step">
+      <span class="step-num">TRADE</span>
+      <h4>Place the orders manually</h4>
+      <p>In Fidelity (or your broker). The tool never places trades.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ CLI ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">2</span>
+    <h2>Command-line cheat sheet</h2>
+    <span class="sub">All flags are optional.</span>
+  </div>
+<pre class="code"><span class="c"># Default run — top 500 by liquidity, opens dashboard.html in browser</span>
+<span class="k">python</span> run.py
+
+<span class="c"># Smaller universe (faster, but ranks against fewer names)</span>
+<span class="k">python</span> run.py <span class="s">--top 200</span>
+
+<span class="c"># Include your own tickers from a file (one per line, # for comments)</span>
+<span class="k">python</span> run.py <span class="s">--watchlist watchlist.txt</span>
+
+<span class="c"># Force-refresh prices (ignore the 15-min cache)</span>
+<span class="k">python</span> run.py <span class="s">--fresh</span>
+
+<span class="c"># Build dashboard but don't auto-open browser (useful in cron)</span>
+<span class="k">python</span> run.py <span class="s">--no-open</span>
+
+<span class="c"># Skip the sector-ETF screener (slightly faster)</span>
+<span class="k">python</span> run.py <span class="s">--no-sectors</span></pre>
+  <div class="callout">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>
+    <p>Output files land next to <code>run.py</code>: <b>dashboard.html</b> (the page) and <b>dashboard.csv</b> (the raw ranked table — drop into Excel or pandas for your own analysis).</p>
+  </div>
+</section>
+
+<!-- ============================ REGIME ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">3</span>
+    <h2>Reading the regime</h2>
+    <span class="sub">SPY's position vs its 50D &amp; 200D MAs picks the regime.</span>
+  </div>
+  <div class="regime-table">
+    <div class="regime-col r-on">
+      <h4 class="r-on">Risk On</h4>
+      <div class="kv"><span>Trigger</span><span>SPY &gt; 50D &amp; 200D</span></div>
+      <div class="kv"><span>Exposure</span><span>80–100%</span></div>
+      <div class="kv"><span>Sizing</span><span>5–8 names</span></div>
+      <div class="kv"><span>BUYs allowed</span><span>Yes</span></div>
+      <div class="kv"><span>Idle capital</span><span>Stays invested</span></div>
+    </div>
+    <div class="regime-col r-mix">
+      <h4 class="r-mix">Mixed</h4>
+      <div class="kv"><span>Trigger</span><span>SPY &gt; 50D, &lt; 200D</span></div>
+      <div class="kv"><span>Exposure</span><span>40–70%</span></div>
+      <div class="kv"><span>Sizing</span><span>3–5 names</span></div>
+      <div class="kv"><span>BUYs allowed</span><span>Yes, selectively</span></div>
+      <div class="kv"><span>Idle capital</span><span>Partial cash</span></div>
+    </div>
+    <div class="regime-col r-def">
+      <h4 class="r-def">Defensive</h4>
+      <div class="kv"><span>Trigger</span><span>SPY &lt; 50D</span></div>
+      <div class="kv"><span>Exposure</span><span>0–30%</span></div>
+      <div class="kv"><span>Sizing</span><span>0–2 names</span></div>
+      <div class="kv"><span>BUYs allowed</span><span>No (no new buys)</span></div>
+      <div class="kv"><span>Idle capital</span><span>BIL / SGOV / MM</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ ACTION LADDER ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">4</span>
+    <h2>The 8-step action ladder</h2>
+    <span class="sub">Every ticker ends in exactly one of these buckets. Filter the dashboard table by bucket.</span>
+  </div>
+  <div class="ladder">
+    <div class="ladder-row"><span class="pill pill-1">1 BUY</span><span class="desc">ACTION BUY</span><span class="rule">Above 200D · Signal BUY · entry A or B · → take a starter or full position</span></div>
+    <div class="ladder-row"><span class="pill pill-2">2 STARTER</span><span class="desc">Starter / Scale-In</span><span class="rule">Above 200D · BUY · entry C (acceptable but a bit extended) · half-size</span></div>
+    <div class="ladder-row"><span class="pill pill-3">3 WATCH+</span><span class="desc">Buyable Watch</span><span class="rule">Above 200D · Signal HOLD · entry A/B/C · already holding? keep; not yet? wait for setup</span></div>
+    <div class="ladder-row"><span class="pill pill-4">4 WATCH</span><span class="desc">Secondary Watch</span><span class="rule">Above 200D · Signal WATCH · entry A/B/C · interesting but rank not high enough</span></div>
+    <div class="ladder-row"><span class="pill pill-5">5 RECLAIM</span><span class="desc">Wait for Reclaim</span><span class="rule">Below 9D average · wait for it to reclaim 9D before re-entering</span></div>
+    <div class="ladder-row"><span class="pill pill-6">6 STALK</span><span class="desc">Stalk Pullback</span><span class="rule">Strong name but too extended (entry E/F/G) · wait for a healthy pullback</span></div>
+    <div class="ladder-row"><span class="pill pill-7">7 LOW</span><span class="desc">Low Priority</span><span class="rule">SELL signal but clean entry · de-prioritize, watch trend</span></div>
+    <div class="ladder-row"><span class="pill pill-8">8 PASS</span><span class="desc">Pass</span><span class="rule">Nothing actionable · skip</span></div>
+  </div>
+  <div class="callout">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c2 0 4 .7 5.5 1.8M21 4l-9 9-3-3"/></svg>
+    <p><b>Triage tip.</b> Each week scan the 1/2/3 buckets first. If your portfolio holds a name now in 5/6/7/8, that's the sell candidate.</p>
+  </div>
+</section>
+
+<!-- ============================ DASHBOARD MAP ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">5</span>
+    <h2>Reading the dashboard</h2>
+    <span class="sub">Top to bottom, what each panel is for.</span>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <span class="badge">Top</span>
+      <h3>Regime panel</h3>
+      <p>7 cells: regime, SPY price, 50D/200D MAs, 3M SPY return, suggested exposure, sizing. <b>Start here</b> — the regime caps everything below.</p>
+    </div>
+    <div class="card">
+      <span class="badge">Above the fold</span>
+      <h3>Sector rankings</h3>
+      <p>11 SPDR sector ETFs scored through the same screener. Top tile = the strongest sector this week. Use it to confirm leadership rotation before picking individual names.</p>
+    </div>
+    <div class="card">
+      <span class="badge">Above the fold</span>
+      <h3>Top action picks</h3>
+      <p>Up to 8 cards of the highest-ranked names currently in buckets 1/2/3. Each card shows price, day %, rank, extension ratio, and the Signal badge.</p>
+    </div>
+    <div class="card">
+      <span class="badge">Mid-page</span>
+      <h3>Top by raw Score</h3>
+      <p>An <i>alternate</i> ranking using pure return weighting (no entry-quality penalty). Often overlaps with action picks but surfaces extended names too — useful to spot what's actually leading.</p>
+    </div>
+    <div class="card">
+      <span class="badge">Main</span>
+      <h3>Full scanner table</h3>
+      <p>Every scored ticker, sortable + filterable. Pills filter by Action bucket or Signal; search box filters by ticker. Click any column header to sort.</p>
+    </div>
+    <div class="card">
+      <span class="badge">Bottom</span>
+      <h3>Methodology &amp; disclaimer</h3>
+      <p>One-paragraph summary of the math and the standard "not financial advice" boilerplate. The tool does not place trades.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ GLOSSARY ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">6</span>
+    <h2>Glossary</h2>
+    <span class="sub">The columns &amp; metrics, plain English.</span>
+  </div>
+  <div class="glossary">
+    <div class="gloss-row"><span class="term">Leadership Score</span><span class="def">Long-term momentum composite: <code>3M·0.3 + 6M·0.25 + 12M·0.1 + RS·0.2 + min(20D&nbsp;above,&nbsp;30%)·0.05 + min(5D,&nbsp;15%)·0.1</code>. Higher = stronger trend.</span></div>
+    <div class="gloss-row"><span class="term">Momentum Score</span><span class="def">Short-term composite: <code>20D&nbsp;above·0.6 + 5D&nbsp;return·0.4</code>. How fresh is the move?</span></div>
+    <div class="gloss-row"><span class="term">Blended Score</span><span class="def">Rank-weighted blend: <code>LeadRank·0.4 + RS20Rank·0.25 + MomRank·0.35</code>. Lower = better (it's ranks, not scores).</span></div>
+    <div class="gloss-row"><span class="term">Final Score</span><span class="def"><code>Blended·0.75 + LocationScore·0.25</code>, then ×0.7 if extension &gt; 3. The number that determines your Final Rank.</span></div>
+    <div class="gloss-row"><span class="term">Raw Score</span><span class="def">A simpler alternate: <code>3M·0.35 + 6M·0.35 + 12M·0.2 + RS·0.1</code>. No entry quality. From the Excel "Rankings" tab.</span></div>
+    <div class="gloss-row"><span class="term">Extension Ratio</span><span class="def"><code>(price − 9D&nbsp;MA) / ATR</code>. How many ATRs above the 9-day average. &gt;3 = parabolic, hit a 0.7× penalty on Final Score.</span></div>
+    <div class="gloss-row"><span class="term">ATR (14)</span><span class="def">14-bar Average True Range — volatility in dollar terms. Used to normalize the Extension Ratio.</span></div>
+    <div class="gloss-row"><span class="term">Entry Grade</span><span class="def">A (ideal, ext≤0.5) → B (0.5–1) → C (1–1.5) → Watch (1.5–2) → Extended (2–3) → Chase (&gt;3) → Below 9D (pullback).</span></div>
+    <div class="gloss-row"><span class="term">Rule Check</span><span class="def">Above 200D · Above 50D only · Below 50D. The trend filter. Only names "Above 200D" can flag as <b>1 ACTION BUY</b>.</span></div>
+    <div class="gloss-row"><span class="term">RS vs SPY 3M</span><span class="def">Ticker's 3-month return <i>minus</i> SPY's 3-month return. Positive = outperforming the market.</span></div>
+  </div>
+</section>
+
+<!-- ============================ PROCESS ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">7</span>
+    <h2>The rules (from the original Process tab)</h2>
+    <span class="sub">The framework, verbatim.</span>
+  </div>
+  <div class="cards">
+    <div class="card"><h3>Review cadence</h3><p>Weekly or monthly; monthly is simpler and reduces churn.</p></div>
+    <div class="card"><h3>Buy rule</h3><p>Top rank, price &gt; 50D, price &gt; 200D, regime not Defensive.</p></div>
+    <div class="card"><h3>Hold rule</h3><p>Rank ≤ 12 and price &gt; 50D.</p></div>
+    <div class="card"><h3>Watch rule</h3><p>Rank ≤ 20 and price within ~2% of the 50D average.</p></div>
+    <div class="card"><h3>Sell rule</h3><p>Weak rank or price &lt; 50D.</p></div>
+    <div class="card"><h3>Defensive posture</h3><p>Regime Defensive → idle capital in <b>BIL/SGOV</b> or money-market funds.</p></div>
+    <div class="card"><h3>Sizing by regime</h3><p>Risk On 5–8 names · Mixed 3–5 · Defensive 0–2.</p></div>
+    <div class="card"><h3>Holding period</h3><p>1–6 months typical; sometimes longer. Hold while rank + trend stay favorable.</p></div>
+    <div class="card"><h3>Mindset</h3><p>Buy strength, not cheapness. Follow leadership, not bottoms.</p></div>
+  </div>
+</section>
+
+<!-- ============================ TROUBLESHOOTING ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">8</span>
+    <h2>If it breaks</h2>
+    <span class="sub">Quick diagnostics for common issues.</span>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <h3>"Failed to fetch SPY"</h3>
+      <p>Network issue, Yahoo rate-limit, or VPN blocking. Retry; if persistent, check <code>yfinance</code> upstream issues.</p>
+    </div>
+    <div class="card">
+      <h3>"possibly delisted: TICK"</h3>
+      <p>Ticker was acquired/spun-off. Harmless — engine skips with a warn. Add the ticker to <code>universe.py</code>'s removed list to silence it.</p>
+    </div>
+    <div class="card">
+      <h3>Dashboard shows zero BUYs</h3>
+      <p>Either regime is <b>Defensive</b> (no BUYs by design), or every top-ranked name is extended. Re-check next session.</p>
+    </div>
+    <div class="card">
+      <h3>Numbers look stale</h3>
+      <p>Cache is 15 min. Run <code>python run.py --fresh</code> to force a re-download.</p>
+    </div>
+  </div>
+</section>
+
+<div class="footer-disclaimer">
+  This tool is informational and educational only. It does not place trades. All order entry happens in your brokerage app
+  (Fidelity, etc.). Stock trading carries real risk of loss — only trade with capital you can afford to lose.
+  Signals reflect historical momentum patterns and offer no guarantee of future returns. Always do your own research.
+</div>
+
+</main>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+</script>
+</body>
+</html>

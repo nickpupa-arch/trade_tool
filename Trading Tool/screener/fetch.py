@@ -7,12 +7,27 @@ to the top N tickers by average 30-day dollar volume.
 """
 from __future__ import annotations
 
-import json
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
+
+
+# The 11 GICS sector SPDR ETFs that Excel's "Sector Rankings" tab tracks.
+# Same screener math is applied to these — rank the sectors against each other.
+SECTOR_ETFS = {
+    "XLK":  "Technology",
+    "XLY":  "Consumer Discretionary",
+    "XLC":  "Communication Services",
+    "XLP":  "Consumer Staples",
+    "XLE":  "Energy",
+    "XLF":  "Financials",
+    "XLI":  "Industrials",
+    "XLV":  "Health Care",
+    "XLB":  "Materials",
+    "XLRE": "Real Estate",
+    "XLU":  "Utilities",
+}
 
 
 def fetch_prices(tickers: list[str],
@@ -111,60 +126,6 @@ def fetch_benchmark(symbol: str = "SPY",
     if cache_path is not None:
         df.to_parquet(cache_path)
     return df
-
-
-def fetch_sector_info(tickers: list[str],
-                      cache_dir: str | Path | None = None,
-                      cache_days: int = 30,
-                      max_workers: int = 10) -> dict[str, dict]:
-    """Look up GICS sector / industry / name for each ticker via yfinance.
-
-    Sectors rarely change, so we cache the result for `cache_days` days.
-    Returns {ticker: {"sector": str|None, "industry": str|None, "name": str|None}}.
-    """
-    import yfinance as yf
-
-    cache_path = None
-    cached: dict[str, dict] = {}
-    if cache_dir:
-        cache_path = Path(cache_dir) / "sectors.json"
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        if cache_path.exists():
-            try:
-                cached = json.loads(cache_path.read_text())
-            except Exception:
-                cached = {}
-            if cache_days > 0:
-                age_days = (time.time() - cache_path.stat().st_mtime) / 86400
-                if age_days < cache_days and all(t in cached for t in tickers):
-                    return {t: cached[t] for t in tickers}
-
-    todo = [t for t in tickers if t not in cached]
-    if todo:
-        print(f"  Fetching sector info for {len(todo)} tickers…")
-
-    def one(t: str) -> tuple[str, dict]:
-        try:
-            i = yf.Ticker(t).info or {}
-            return t, {
-                "sector": i.get("sector"),
-                "industry": i.get("industry"),
-                "name": i.get("shortName") or i.get("longName"),
-            }
-        except Exception:
-            return t, {"sector": None, "industry": None, "name": None}
-
-    if todo:
-        with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = [ex.submit(one, t) for t in todo]
-            for fut in as_completed(futures):
-                t, d = fut.result()
-                cached[t] = d
-
-    if cache_path:
-        cache_path.write_text(json.dumps(cached, indent=2, sort_keys=True))
-
-    return {t: cached.get(t, {"sector": None, "industry": None, "name": None}) for t in tickers}
 
 
 def filter_by_liquidity(price_data: dict[str, pd.DataFrame],
