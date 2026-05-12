@@ -262,6 +262,24 @@ a.trade:hover { background: var(--accent); color: var(--bg); text-decoration: no
 .action-7 { background: var(--action7); color: var(--bg); }
 .action-8 { background: var(--action8); color: var(--text-dim); }
 
+/* ---- TV TRIGGER PILLS ---- */
+.tv-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  margin: 1px 3px 1px 0;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 999px;
+  color: #0F172A;
+  letter-spacing: 0.02em;
+}
+.tv-pill-squeeze_fire { background: #F59E0B; }
+.tv-pill-squeeze_on { background: #FB923C; }
+.tv-pill-macd_bull_cross { background: #22C55E; }
+.tv-pill-rsi_bull_divergence { background: #22D3EE; }
+.tv-pill-vol_surge { background: #A78BFA; }
+.tv-pills-wrap { margin-top: 6px; display: flex; flex-wrap: wrap; }
+
 /* ---- DISCLAIMER ---- */
 .disclaimer {
   margin-top: 32px;
@@ -375,17 +393,24 @@ JS = """
   const rows = Array.from(document.querySelectorAll('#scanner tbody tr'));
   const search = document.getElementById('search');
   const actionPills = Array.from(document.querySelectorAll('.pill[data-filter]'));
-  const filterState = { action: 'all', signal: 'all', query: '' };
+  const filterState = { action: 'all', signal: 'all', trigger: 'all', query: '' };
 
   function apply() {
     rows.forEach(r => {
       const a = r.dataset.action || '';
       const s = r.dataset.signal || '';
+      const tv = r.dataset.tvTriggers || '';
       const t = (r.dataset.search || '').toLowerCase();
       const showA = filterState.action === 'all' || a.startsWith(filterState.action);
       const showS = filterState.signal === 'all' || s === filterState.signal;
+      let showT = true;
+      if (filterState.trigger === 'any') {
+        showT = tv.length > 0;
+      } else if (filterState.trigger !== 'all') {
+        showT = tv.indexOf(filterState.trigger) !== -1;
+      }
       const showQ = !filterState.query || t.includes(filterState.query);
-      r.style.display = (showA && showS && showQ) ? '' : 'none';
+      r.style.display = (showA && showS && showT && showQ) ? '' : 'none';
     });
   }
 
@@ -469,6 +494,28 @@ def _action_badge(a: str) -> str:
     return f'<span class="action-badge action-{num}">{a}</span>'
 
 
+_TV_PILL_LABELS = {
+    "squeeze_fire": "🔥 Squeeze",
+    "squeeze_on": "⏳ Squeeze On",
+    "macd_bull_cross": "📈 MACD",
+    "rsi_bull_divergence": "↗ RSI Div",
+    "vol_surge": "📊 Vol",
+}
+
+
+def _tv_trigger_pills(label: str) -> str:
+    if not label or (isinstance(label, float) and pd.isna(label)):
+        return ""
+    parts = [p.strip() for p in str(label).split(",") if p.strip()]
+    if not parts:
+        return ""
+    html = ""
+    for name in parts:
+        text = _TV_PILL_LABELS.get(name, name)
+        html += f'<span class="tv-pill tv-pill-{name}">{text}</span>'
+    return html
+
+
 # ---------------------------------------------------------------------------
 # Dashboard renderer
 # ---------------------------------------------------------------------------
@@ -550,6 +597,11 @@ def render(regime: dict,
 
     cards_html = ""
     for _, r in top_picks.iterrows():
+        tv_label = r.get("tv_trigger_label", "") if "tv_trigger_label" in r else ""
+        tv_pills_html = _tv_trigger_pills(tv_label)
+        tv_pills_block = (
+            f'<div class="tv-pills-wrap">{tv_pills_html}</div>' if tv_pills_html else ""
+        )
         cards_html += f"""
         <div class="card">
           <div class="top">
@@ -568,7 +620,9 @@ def render(regime: dict,
             <span>Ext <b>{_fmt_num(r['extension_ratio'])}</b></span>
             <span>{_signal_badge(r['signal'])}</span>
           </div>
+          {tv_pills_block}
           <a class="trade-cta" href="https://digital.fidelity.com/prgw/digital/trade-equity/?symbol={r['ticker']}" target="_blank">Trade {r['ticker']} in Fidelity ↗</a>
+          <a class="trade" href="https://www.tradingview.com/chart/?symbol={r['ticker']}" target="_blank" style="margin-top:8px">TV ↗</a>
         </div>
         """
 
@@ -594,6 +648,8 @@ def render(regime: dict,
         ("Final Rank",    "final_rank",              "number", "int"),
         ("Raw Rank",      "raw_rank",                "number", "int"),
         ("vs MAs",        "rule_check",              "string", None),
+        ("TV Signals",    "tv_trigger_label",        "string", "tv_triggers"),
+        ("TV Count",      "tv_trigger_count",        "number", "int"),
     ]
     th_html = ""
     for label, key, typ, _ in columns:
@@ -625,15 +681,22 @@ def render(regime: dict,
                 cell = _fmt_num(v, 2)
             elif fmt == "ticker":
                 cell = (f'<a href="https://finance.yahoo.com/quote/{v}" target="_blank">{v}</a>'
-                        f'<a class="trade" href="https://digital.fidelity.com/prgw/digital/trade-equity/?symbol={v}" target="_blank" title="Trade {v} in Fidelity">Trade&nbsp;↗</a>')
+                        f'<a class="trade" href="https://digital.fidelity.com/prgw/digital/trade-equity/?symbol={v}" target="_blank" title="Trade {v} in Fidelity">Trade&nbsp;↗</a>'
+                        f'<a class="trade" href="https://www.tradingview.com/chart/?symbol={v}" target="_blank" title="Open {v} in TradingView">TV&nbsp;↗</a>')
+            elif fmt == "tv_triggers":
+                cell = _tv_trigger_pills(v) or "—"
             else:
                 cell = str(v) if v else "—"
             td_cls = "ticker" if key == "ticker" else ""
             cells += f'<td class="{td_cls}"{sort_v}>{cell}</td>'
 
+        tv_label = r.get("tv_trigger_label") if "tv_trigger_label" in r else ""
+        if tv_label is None or (isinstance(tv_label, float) and pd.isna(tv_label)):
+            tv_label = ""
         body_rows += (
             f'<tr data-action="{(r.get("action") or "").split()[0] if r.get("action") else ""}" '
             f'data-signal="{r.get("signal") or ""}" '
+            f'data-tv-triggers="{tv_label}" '
             f'data-search="{r["ticker"]}">'
             f'{cells}</tr>'
         )
@@ -740,6 +803,12 @@ def render(regime: dict,
     <span class="pill" data-group="signal" data-filter="HOLD">Hold</span>
     <span class="pill" data-group="signal" data-filter="WATCH">Watch</span>
     <span class="pill" data-group="signal" data-filter="SELL">Sell</span>
+    <span class="filter-label" style="margin-left:14px">TV Trigger</span>
+    <span class="pill on" data-group="trigger" data-filter="all">All</span>
+    <span class="pill" data-group="trigger" data-filter="squeeze_fire">🔥 Squeeze</span>
+    <span class="pill" data-group="trigger" data-filter="macd_bull_cross">📈 MACD Cross</span>
+    <span class="pill" data-group="trigger" data-filter="vol_surge">📊 Vol Surge</span>
+    <span class="pill" data-group="trigger" data-filter="any">⚡ Any Signal</span>
     <input id="search" class="search" placeholder="Search ticker…" />
   </div>
 

@@ -91,6 +91,207 @@ def _atr14(df: pd.DataFrame) -> float | None:
     return float(np.mean(tr[-14:]))
 
 
+# ---------------------------------------------------------------------------
+# TradingView Trigger Layer
+# ---------------------------------------------------------------------------
+TV_TRIGGER_KEYS = (
+    "squeeze_on",
+    "squeeze_fire",
+    "macd_bull_cross",
+    "rsi_bull_divergence",
+    "vol_surge",
+)
+
+
+def _ema(values: np.ndarray, period: int) -> np.ndarray:
+    """Exponential moving average. Returns same length as input (NaN-padded start)."""
+    alpha = 2.0 / (period + 1.0)
+    out = np.full_like(values, np.nan, dtype=float)
+    if len(values) < period:
+        return out
+    seed = np.mean(values[:period])
+    out[period - 1] = seed
+    for i in range(period, len(values)):
+        out[i] = alpha * values[i] + (1.0 - alpha) * out[i - 1]
+    return out
+
+
+def _rsi(values: np.ndarray, period: int = 14) -> np.ndarray:
+    """Wilder's RSI. Returns same length as input (NaN-padded start)."""
+    out = np.full_like(values, np.nan, dtype=float)
+    if len(values) < period + 1:
+        return out
+    diffs = np.diff(values)
+    gains = np.where(diffs > 0, diffs, 0.0)
+    losses = np.where(diffs < 0, -diffs, 0.0)
+    avg_gain = np.mean(gains[:period])
+    avg_loss = np.mean(losses[:period])
+    if avg_loss == 0:
+        out[period] = 100.0
+    else:
+        rs = avg_gain / avg_loss
+        out[period] = 100.0 - (100.0 / (1.0 + rs))
+    for i in range(period + 1, len(values)):
+        avg_gain = (avg_gain * (period - 1) + gains[i - 1]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i - 1]) / period
+        if avg_loss == 0:
+            out[i] = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            out[i] = 100.0 - (100.0 / (1.0 + rs))
+    return out
+
+
+def _swing_lows(values: np.ndarray) -> list[int]:
+    """Indices of local minima where v[i] < v[i-2] and v[i] < v[i+2]."""
+    idx = []
+    for i in range(2, len(values) - 2):
+        if np.isnan(values[i]):
+            continue
+        if values[i] < values[i - 2] and values[i] < values[i + 2]:
+            idx.append(i)
+    return idx
+
+
+def _compute_tv_triggers(df: pd.DataFrame,
+                         close: pd.Series,
+                         volume: pd.Series) -> dict:
+    """Compute the 5 TradingView confirmation triggers.
+
+    Returns a dict with keys TV_TRIGGER_KEYS, all bools, defaulting to False
+    when data is insufficient or computation fails.
+    """
+    triggers = {k: False for k in TV_TRIGGER_KEYS}
+
+    try:
+        c = close.to_numpy(dtype=float)
+        if len(c) < 30:
+            return triggers
+
+        # ---- TTM Squeeze: BB (20, 2σ) inside KC (20 EMA ± 1.5 ATR) ----
+        bb_period = 20
+        kc_period = 20
+        bb_mult = 2.0
+        kc_mult = 1.5
+
+        sma20 = pd.Series(c).rolling(bb_period).mean().to_numpy()
+        std20 = pd.Series(c).rolling(bb_period).std(ddof=0).to_numpy()
+        bb_upper = sma20 + bb_mult * std20
+        bb_lower = sma20 - bb_mult * std20
+
+        ema20 = _ema(c, kc_period)
+        high = df["High"].to_numpy(dtype=float) if "High" in df.columns else c
+        low = df["Low"].to_numpy(dtype=float) if "Low" in df.columns else c
+        # True range series
+        prev_close = np.roll(c, 1)
+        prev_close[0] = c[0]
+        tr = np.maximum.reduce([
+            high - low,
+            np.abs(high - prev_close),
+            np.abs(low - prev_close),
+        ])
+        atr_series = pd.Series(tr).rolling(kc_period).mean().to_numpy()
+        kc_upper = ema20 + kc_mult * atr_series
+        kc_lower = ema20 - kc_mult * atr_series
+
+        squeeze_arr = (bb_upper < kc_upper) & (bb_lower > kc_lower)
+        # Mask out positions where any input is NaN
+        valid = ~(np.isnan(bb_upper) | np.isnan(kc_upper) |
+                  np.isnan(bb_lower) | np.isnan(kc_lower))
+        squeeze_arr = squeeze_arr & valid
+
+        if len(squeeze_arr) >= 2:
+            triggers["squeeze_on"] = bool(squeeze_arr[-1])
+
+            # Momentum histogram: linear regression of (close - midpoint) over 20 bars
+            mom_window = 20
+            if len(c) >= mom_window:
+                highest_high = pd.Series(high).rolling(mom_window).max().to_numpy()
+                lowest_low = pd.Series(low).rolling(mom_window).min().to_numpy()
+                midpoint = (highest_high + lowest_low) / 2.0
+                ma_close = pd.Series(c).rolling(mom_window).mean().to_numpy()
+                avg_mid = (midpoint + ma_close) / 2.0
+                src = c - avg_mid
+                # Linear regression slope-based "value" (Pine: linreg(src, 20, 0))
+                x = np.arange(mom_window, dtype=float)
+                x_mean = x.mean()
+                denom = ((x - x_mean) ** 2).sum()
+                last_src = src[-mom_window:]
+                if not np.any(np.isnan(last_src)) and denom > 0:
+                    y_mean = last_src.mean()
+                    slope = ((x - x_mean) * (last_src - y_mean)).sum() / denom
+                    intercept = y_mean - slope * x_mean
+                    mom_val = intercept + slope * (mom_window - 1)
+                    if squeeze_arr[-2] and not squeeze_arr[-1] and mom_val > 0:
+                        triggers["squeeze_fire"] = True
+
+        # ---- MACD bullish cross in last 3 bars + above 200D MA ----
+        if len(c) >= 35:
+            ema12 = _ema(c, 12)
+            ema26 = _ema(c, 26)
+            macd_line = ema12 - ema26
+            # Signal line = 9-EMA of MACD (skip NaNs)
+            macd_valid = macd_line[~np.isnan(macd_line)]
+            if len(macd_valid) >= 9:
+                sig_valid = _ema(macd_valid, 9)
+                signal_line = np.full_like(macd_line, np.nan)
+                start = len(macd_line) - len(sig_valid)
+                signal_line[start:] = sig_valid
+                hist = macd_line - signal_line
+
+                if len(c) >= 200:
+                    ma200 = float(pd.Series(c).tail(200).mean())
+                    above_200 = c[-1] > ma200
+                else:
+                    above_200 = False
+
+                if above_200 and len(hist) >= 4:
+                    last3 = hist[-3:]
+                    prior = hist[-4:-1]
+                    crossed = False
+                    for i in range(3):
+                        if (not np.isnan(prior[i]) and not np.isnan(last3[i])
+                                and prior[i] < 0 and last3[i] > 0):
+                            crossed = True
+                            break
+                    triggers["macd_bull_cross"] = crossed
+
+        # ---- RSI hidden bullish divergence over last 30 bars ----
+        if len(c) >= 30:
+            window = 30
+            c_window = c[-window:]
+            rsi = _rsi(c, 14)
+            rsi_window = rsi[-window:]
+            price_lows = _swing_lows(c_window)
+            rsi_lows = _swing_lows(rsi_window)
+            if len(price_lows) >= 2 and len(rsi_lows) >= 2:
+                p_last, p_prev = price_lows[-1], price_lows[-2]
+                r_last, r_prev = rsi_lows[-1], rsi_lows[-2]
+                if (c_window[p_last] > c_window[p_prev]
+                        and not np.isnan(rsi_window[r_last])
+                        and not np.isnan(rsi_window[r_prev])
+                        and rsi_window[r_last] < rsi_window[r_prev]):
+                    triggers["rsi_bull_divergence"] = True
+
+        # ---- Volume surge + breakout above prior day's high ----
+        if volume is not None and not volume.dropna().empty and "High" in df.columns:
+            v = volume.to_numpy(dtype=float)
+            h = df["High"].to_numpy(dtype=float)
+            if len(v) >= 21 and not np.all(np.isnan(v)):
+                vol_avg20 = pd.Series(v).rolling(20).mean().to_numpy()
+                if (not np.isnan(v[-1]) and not np.isnan(vol_avg20[-2])
+                        and vol_avg20[-2] > 0
+                        and v[-1] > 1.5 * vol_avg20[-2]
+                        and not np.isnan(h[-2])
+                        and c[-1] > h[-2]):
+                    triggers["vol_surge"] = True
+    except Exception:
+        # Never break a screener run for a trigger-layer issue
+        return {k: False for k in TV_TRIGGER_KEYS}
+
+    return triggers
+
+
 def per_ticker_metrics(ticker: str, df: pd.DataFrame, regime: dict) -> dict:
     """Compute every metric the Excel sheet computes for one ticker."""
     out: dict = {"ticker": ticker}
@@ -133,6 +334,10 @@ def per_ticker_metrics(ticker: str, df: pd.DataFrame, regime: dict) -> dict:
     else:
         out["extension_ratio"] = None
         out["atr_pct"] = None
+
+    # TradingView trigger layer — 5 confirmation booleans
+    volume = df["Volume"] if "Volume" in df.columns else pd.Series(dtype=float)
+    out.update(_compute_tv_triggers(df, close, volume))
 
     return out
 
@@ -215,6 +420,16 @@ def compute_scores(df: pd.DataFrame) -> pd.DataFrame:
     ) * np.where(df["extension_ratio"].fillna(0) > 3, 0.7, 1.0)
     # rank ascending (lower final_score = better, like in sheet)
     df["final_rank"] = _rank_descending(df["final_score"])
+
+    # --- TradingView trigger composite ---
+    for k in TV_TRIGGER_KEYS:
+        if k not in df.columns:
+            df[k] = False
+        df[k] = df[k].fillna(False).astype(bool)
+    df["tv_trigger_count"] = df[list(TV_TRIGGER_KEYS)].sum(axis=1).astype(int)
+    df["tv_trigger_label"] = df[list(TV_TRIGGER_KEYS)].apply(
+        lambda r: ", ".join(k for k in TV_TRIGGER_KEYS if r[k]), axis=1
+    )
 
     return df
 
