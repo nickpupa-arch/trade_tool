@@ -23,13 +23,15 @@ from screener.fetch import (
     filter_by_liquidity,
     SECTOR_ETFS,
 )
-from screener.engine import run_screener
+from screener.engine import run_screener, TV_TRIGGER_KEYS
 from screener.dashboard import render
+from screener.triggers import generate_pine_watchlist_alert
 
 
 HERE = Path(__file__).resolve().parent
 CACHE_DIR = HERE / ".cache"
 OUT_PATH = HERE / "dashboard.html"
+PINE_PATH = HERE / "dashboard_pine_alerts.pine"
 
 
 def main() -> None:
@@ -46,6 +48,9 @@ def main() -> None:
                     help="Output HTML path (default ./dashboard.html)")
     ap.add_argument("--no-sectors", action="store_true",
                     help="Skip the sector-ETF screener panel")
+    ap.add_argument("--export-pine", action="store_true",
+                    help="Write a Pine Script v6 alert file for the top 25 "
+                         "1 ACTION BUY tickers to dashboard_pine_alerts.pine")
     args = ap.parse_args()
 
     cache_minutes = 0 if args.fresh else 15
@@ -74,6 +79,23 @@ def main() -> None:
     print(f"  Top action picks: {(results['action'] == '1 ACTION BUY').sum()} ACTION BUY"
           f", {(results['action'] == '2 STARTER / SCALE-IN').sum()} STARTERS"
           f", {(results['action'] == '3 BUYABLE WATCH').sum()} BUYABLE WATCH")
+
+    # TradingView trigger summary
+    if not results.empty:
+        parts = []
+        for k in TV_TRIGGER_KEYS:
+            n = int(results[k].sum()) if k in results.columns else 0
+            parts.append(f"{k}: {n}")
+        print("[triggers] " + " | ".join(parts))
+
+    if args.export_pine:
+        top_buys = results[results["action"] == "1 ACTION BUY"]["ticker"].head(25).tolist()
+        if not top_buys:
+            print("[pine] No 1 ACTION BUY tickers — skipping Pine export.")
+        else:
+            pine_src = generate_pine_watchlist_alert(top_buys)
+            PINE_PATH.write_text(pine_src, encoding="utf-8")
+            print(f"[pine] Wrote {PINE_PATH.name} for {len(top_buys)} ticker(s)")
 
     # Sector ETF screener (port of Excel "Sector Rankings" tab)
     sector_etfs = None
