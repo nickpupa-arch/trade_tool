@@ -10,6 +10,7 @@ Usage:
     python run.py --no-sectors    # skip the sector-ETF panel
     python run.py --notify        # process Telegram bot + send portfolio alerts
     python run.py --digest        # force-send the morning digest now
+    python run.py --bot-only      # poll Telegram for commands only (no screener)
 """
 from __future__ import annotations
 
@@ -64,7 +65,15 @@ def main() -> None:
     ap.add_argument("--digest", action="store_true",
                     help="Force-send the morning digest (resets last_digest_date "
                          "for this run).")
+    ap.add_argument("--bot-only", action="store_true",
+                    help="Skip the screener entirely. Just poll Telegram for "
+                         "commands, reply, persist state. ~5s runtime — meant "
+                         "for the 1-minute bot workflow.")
     args = ap.parse_args()
+
+    if args.bot_only:
+        _run_bot_only()
+        return
 
     cache_minutes = 0 if args.fresh else 15
 
@@ -143,6 +152,83 @@ def main() -> None:
 
     if not args.no_open:
         webbrowser.open(out.as_uri())
+
+
+def _prices_from_last_csv() -> dict[str, float]:
+    """Read live prices from the most recent dashboard.csv (written by the
+    15-min screener run). Used by --bot-only so /list still shows P/L
+    without re-running the screener."""
+    candidates = [
+        Path(__file__).resolve().parent / "dashboard.csv",
+        Path(__file__).resolve().parent / "_site" / "dashboard.csv",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            import csv
+            out: dict[str, float] = {}
+            with path.open() as fh:
+                reader = csv.DictReader(fh)
+                for row in reader:
+                    t = row.get("ticker")
+                    p = row.get("live_price")
+                    if t and p:
+                        try:
+                            out[t] = float(p)
+                        except ValueError:
+                            continue
+            return out
+        except Exception as exc:  # noqa: BLE001
+            print(f"[bot-only] Could not read prices from {path}: {exc}")
+            continue
+    return {}
+
+
+def _run_bot_only() -> None:
+    """Lightweight Telegram poll — no screener, no dashboard.
+
+    Loads encrypted state, processes any pending /add /remove /list /help
+    commands, then persists state. Designed to run from a 1-minute cron so
+    bot replies arrive in ~60-90s instead of every 15 min.
+
+    For /list price lookups, reuses the last dashboard.csv written by the
+    15-min screener (so P/L numbers reflect last screener tick, not live).
+    """
+    try:
+        state = load_state()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[bot-only] Could not load state ({exc}). Aborting.")
+        return
+
+    notifier = TelegramNotifier()
+    if not notifier.configured:
+        print("[bot-only] TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set — exit.")
+        return
+
+    prices = _prices_from_last_csv()
+    if prices:
+        print(f"[bot-only] Loaded {len(prices)} prices from last screener CSV")
+    else:
+        print("[bot-only] No dashboard.csv found yet — /list will show cost basis only")
+
+    try:
+        n = process_updates(notifier, state, prices=prices)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[bot-only] Command poll failed: {exc}")
+        # Still try to save state to capture any partial update_id progress
+        n = 0
+
+    if n:
+        print(f"[bot-only] Dispatched {n} bot command(s)")
+    else:
+        print("[bot-only] No pending commands")
+
+    try:
+        save_state(state)
+        print("[bot-only] state.enc updated")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[bot-only] Could not save state: {exc}")
 
 
 def _run_notify_pipeline(regime: dict, results, *, force_digest: bool) -> None:

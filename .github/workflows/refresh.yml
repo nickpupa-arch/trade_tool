@@ -18,7 +18,10 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  # Shared with bot.yml so the two workflows serialize on state.enc updates
+  # and Pages deploys. cancel-in-progress: false → the 1-min bot waits for
+  # the 15-min screener instead of getting cancelled mid-flight.
+  group: state-update
   cancel-in-progress: false
 
 jobs:
@@ -89,8 +92,20 @@ jobs:
             echo "state.enc unchanged — nothing to commit"
             exit 0
           fi
+          # Rebase before push in case bot.yml pushed since checkout
+          git stash
+          git pull --rebase origin main || {
+            echo "rebase failed — abandoning this commit; next tick will retry"
+            git stash pop || true
+            exit 0
+          }
+          git stash pop
+          git add state.enc
           git commit -m "bot: update encrypted state [skip ci]"
-          git push origin HEAD:main
+          git push origin HEAD:main || {
+            echo "push failed (race with bot.yml) — next tick will retry"
+            exit 0
+          }
 
       - uses: actions/upload-pages-artifact@v3
         # Only upload the Pages artifact when we're going to deploy it (main).
