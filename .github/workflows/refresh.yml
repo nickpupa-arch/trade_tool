@@ -13,12 +13,15 @@ on:
       - ".github/workflows/refresh.yml"
 
 permissions:
-  contents: read
+  contents: write   # needs write so the workflow can commit state.enc back to main
   pages: write
   id-token: write
 
 concurrency:
-  group: pages
+  # Shared with bot.yml so the two workflows serialize on state.enc updates
+  # and Pages deploys. cancel-in-progress: false → the 1-min bot waits for
+  # the 15-min screener instead of getting cancelled mid-flight.
+  group: state-update
   cancel-in-progress: false
 
 jobs:
@@ -27,6 +30,11 @@ jobs:
     defaults:
       run:
         working-directory: "Trading Tool"
+    env:
+      # Set as GitHub repo secrets. Bot/notify steps no-op if any are unset.
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      PORTFOLIO_ENCRYPTION_KEY: ${{ secrets.PORTFOLIO_ENCRYPTION_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,8 +47,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run the screener
-        run: python run.py --no-open --out _site/dashboard.html
+      - name: Run the screener (with bot + alerts when configured)
+        run: python run.py --no-open --notify --out _site/dashboard.html
+
+      - name: Verify no portfolio data leaked into _site/
+        # Defense-in-depth: the Pages artifact must not contain any encrypted
+        # blob or other portfolio-shaped file. Fail loudly if it does.
+        run: |
+          if find _site -maxdepth 3 \( -name "state*" -o -name "portfolio*" \) | grep -q .; then
+            echo "ERROR: portfolio-shaped files found in _site/ — aborting deploy"
+            find _site -maxdepth 3 \( -name "state*" -o -name "portfolio*" \)
+            exit 1
+          fi
 
       - name: Copy static assets
         run: |
@@ -56,11 +74,49 @@ jobs:
           <title>Trading Tool</title>
           HTML
 
+      - name: Commit state.enc back to main (if changed)
+        # state.enc is the Fernet-encrypted portfolio + bot state. Plaintext
+        # never lands in the repo. Skip-ci on the message so this commit
+        # doesn't retrigger the workflow. Only on main — branch test runs
+        # via workflow_dispatch should not write to main's state.
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          if [ ! -f state.enc ]; then
+            echo "No state.enc to commit — skipping"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.enc
+          if git diff --cached --quiet; then
+            echo "state.enc unchanged — nothing to commit"
+            exit 0
+          fi
+          # Rebase before push in case bot.yml pushed since checkout
+          git stash
+          git pull --rebase origin main || {
+            echo "rebase failed — abandoning this commit; next tick will retry"
+            git stash pop || true
+            exit 0
+          }
+          git stash pop
+          git add state.enc
+          git commit -m "bot: update encrypted state [skip ci]"
+          git push origin HEAD:main || {
+            echo "push failed (race with bot.yml) — next tick will retry"
+            exit 0
+          }
+
       - uses: actions/upload-pages-artifact@v3
+        # Only upload the Pages artifact when we're going to deploy it (main).
+        # Branch test runs build everything but stop short of Pages.
+        if: github.ref == 'refs/heads/main'
         with:
           path: "Trading Tool/_site"
 
   deploy:
+    # Only deploy from main. Branch workflow_dispatch runs build + test only.
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:
