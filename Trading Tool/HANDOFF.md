@@ -1,6 +1,34 @@
 # Trading Tool — Handoff to Claude Code
 
-Status as of **2026-05-10**. Author: Nick + Claude (Cowork).
+Status as of **2026-05-13** (v2 — portfolio + Telegram). Author: Nick + Claude (Cowork).
+
+## v2: Portfolio + Telegram alerts
+
+New modules under `screener/`:
+
+- `portfolio.py` — Fernet-encrypted state CRUD. `State` dataclass holds the portfolio
+  dict, last Telegram update_id, last digest date, and prior-run snapshots used by
+  the diff-based alerts. Plaintext never lands on disk.
+- `notifier.py` — `TelegramNotifier` wrapping the Bot API. MarkdownV2-escaped sends.
+  Auto-splits messages > 4096 chars.
+- `bot.py` — Cron-polling Telegram bot. Commands: `/add`, `/remove`, `/list`, `/help`.
+  Only acts on the configured chat_id; ignores everything else.
+- `alerts.py` — Pure functions returning MarkdownV2 strings for 4 alert types:
+  morning digest, action-bucket transitions on holdings, TV triggers firing on
+  holdings, fresh top-20 ACTION BUYs.
+
+`run.py` adds `--notify` and `--digest` flags. The GH Actions workflow runs
+`--notify` every 15 min during market hours, processes bot commands, sends alerts,
+and commits the updated `state.enc` back to main with `[skip ci]`.
+
+**Setup**: see how-to.html §10 for the BotFather + chat_id + Fernet-key walkthrough.
+Three GitHub repo secrets required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
+`PORTFOLIO_ENCRYPTION_KEY`. Without them the screener still runs and deploys
+normally — only the notify pipeline is skipped.
+
+---
+
+
 
 The goal: take the logic of `Copy of Primary Trending Stock Screener_04.19.26.xlsx`
 (originally built by a friend in Google Sheets, using GOOGLEFINANCE) and re-implement

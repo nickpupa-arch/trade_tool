@@ -425,7 +425,13 @@ kbd {
 
 <span class="c"># Export a Pine Script alert file for the session's top 25 ACTION BUYs</span>
 <span class="c"># → writes dashboard_pine_alerts.pine next to run.py</span>
-<span class="k">python</span> run.py <span class="s">--export-pine</span></pre>
+<span class="k">python</span> run.py <span class="s">--export-pine</span>
+
+<span class="c"># Process Telegram bot commands + send portfolio alerts (see §11)</span>
+<span class="k">python</span> run.py <span class="s">--notify</span>
+
+<span class="c"># Force-send the morning portfolio digest right now</span>
+<span class="k">python</span> run.py <span class="s">--notify --digest</span></pre>
   <div class="callout">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>
     <p>Output files land next to <code>run.py</code>: <b>dashboard.html</b> (the page) and <b>dashboard.csv</b> (the raw ranked table — drop into Excel or pandas for your own analysis).</p>
@@ -660,10 +666,91 @@ kbd {
   </div>
 </section>
 
-<!-- ============================ TROUBLESHOOTING ============================ -->
+<!-- ============================ PORTFOLIO + TELEGRAM ============================ -->
 <section>
   <div class="section-head">
     <span class="num">10</span>
+    <h2>Portfolio &amp; Telegram alerts</h2>
+    <span class="sub">v2 — chat-driven position tracking, encrypted state, four alert types.</span>
+  </div>
+  <p style="color:var(--text-dim); margin-bottom:14px; max-width:820px">
+    The v2 layer adds <b>portfolio monitoring</b> on top of the screener.
+    Positions are tracked via a Telegram bot (no dashboard panel — keeps holdings off
+    the public Pages URL). The bot sends four kinds of alerts:
+  </p>
+
+  <div class="cards" style="margin-bottom:18px">
+    <div class="card">
+      <h3>🌅 Morning digest</h3>
+      <p>Once per ET trading day at market open: current regime, your holdings with live P/L, current action bucket per position, plus the top 5 ACTION BUYs to consider.</p>
+    </div>
+    <div class="card">
+      <h3>⬆️⬇️ Action transitions</h3>
+      <p>When a held position changes action bucket (e.g. <b>3 BUYABLE WATCH → 5 WAIT FOR RECLAIM</b>). Up-arrow = improved, down-arrow = degraded.</p>
+    </div>
+    <div class="card">
+      <h3>🔔 TV triggers on a holding</h3>
+      <p>When one of the 5 TradingView triggers (squeeze fire, MACD cross, RSI div, vol surge) <i>newly</i> fires on a name you own. Diffed vs prior run so you don't get repeats.</p>
+    </div>
+    <div class="card">
+      <h3>✨ Fresh top-20 ACTION BUYs</h3>
+      <p>When a new ticker enters the top-20 ranks at <b>1 ACTION BUY</b>. Surfacing fresh ideas without you having to re-check the dashboard.</p>
+    </div>
+  </div>
+
+  <h3 style="font-size:15px; margin-bottom:8px">Bot commands</h3>
+<pre class="code"><span class="c"># Add a position — shares + cost basis (entry_date optional)</span>
+<span class="k">/add</span> NVDA 50 @950.25
+<span class="k">/add</span> AAPL 30 @182.10 2026-04-01
+
+<span class="c"># Remove a position</span>
+<span class="k">/remove</span> NVDA
+
+<span class="c"># Show current portfolio with live prices + P/L %</span>
+<span class="k">/list</span>
+
+<span class="c"># Show help</span>
+<span class="k">/help</span></pre>
+
+  <h3 style="font-size:15px; margin: 18px 0 8px">One-time setup</h3>
+  <p style="color:var(--text-dim); max-width:820px; margin-bottom: 8px">
+    Three GitHub repo secrets need to be set for the workflow to talk to Telegram.
+    Settings → Secrets and variables → Actions → New repository secret.
+  </p>
+<pre class="code"><span class="c"># 1. Create the bot</span>
+<span class="c"># Open Telegram, message @BotFather, send: /newbot</span>
+<span class="c"># Pick a name + username. BotFather returns a token like:</span>
+<span class="c">#     1234567890:ABCdefGhIjKlMnOpQrStUvWxYz</span>
+<span class="c"># → Save as repo secret TELEGRAM_BOT_TOKEN</span>
+
+<span class="c"># 2. Get your chat_id</span>
+<span class="c"># Message your bot once (any text), then visit:</span>
+<span class="c">#     https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</span>
+<span class="c"># Find the "chat":{"id":...} value — it's a number like 123456789.</span>
+<span class="c"># → Save as repo secret TELEGRAM_CHAT_ID</span>
+
+<span class="c"># 3. Generate an encryption key for your portfolio state</span>
+<span class="k">python</span> -c <span class="s">"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"</span>
+<span class="c"># → Save as repo secret PORTFOLIO_ENCRYPTION_KEY (back it up!)</span>
+
+<span class="c"># 4. Push a commit (or hit "Run workflow") so the next refresh picks up the secrets.</span>
+<span class="c"># Send /help in Telegram to confirm the bot replies.</span></pre>
+
+  <div class="callout">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1l3 6 6.5 1-4.7 4.6 1.2 6.4L12 16l-6 3 1.2-6.4L2.5 8 9 7l3-6z"/></svg>
+    <p><b>Security model.</b> Your portfolio lives in <code>state.enc</code> — a Fernet-encrypted blob in the repo. The encryption key is a GitHub repo secret, never embedded in the deploy. The dashboard's <code>_site/</code> artifact <i>excludes</i> all portfolio-shaped files (verified by an explicit check in the workflow). Even if someone reads the public repo or the Pages site, the worst they can do is hold a useless ciphertext. <b>Back up your <code>PORTFOLIO_ENCRYPTION_KEY</code></b> — losing it means losing your portfolio history.</p>
+  </div>
+
+  <div class="callout">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>
+    <p><b>Latency.</b> Bot commands are processed by the same 15-min cron that builds the dashboard. So <code>/add NVDA 50 @950</code> can take up to 15 minutes to be acknowledged. This is intentional — no separate VPS to run. If you want real-time replies, host a polling process (out of scope for v2).</p>
+  </div>
+</section>
+
+<!-- ============================ TROUBLESHOOTING ============================ -->
+<section>
+  <div class="section-head">
+    <span class="num">11</span>
     <h2>If it breaks</h2>
     <span class="sub">Quick diagnostics for common issues.</span>
   </div>
@@ -691,6 +778,18 @@ kbd {
     <div class="card">
       <h3>TV column shows "—" everywhere</h3>
       <p>Universe is &lt; 30 bars deep (new tickers in your watchlist?). Triggers default to <code>False</code> when there isn't enough history. Wait a few sessions.</p>
+    </div>
+    <div class="card">
+      <h3>Bot doesn't reply to /add</h3>
+      <p>Three things: <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>, and <code>PORTFOLIO_ENCRYPTION_KEY</code> all set in repo secrets? Have you messaged the bot at least once so it sees your chat_id? Check the latest workflow log for <code>[notify]</code> lines.</p>
+    </div>
+    <div class="card">
+      <h3>"PORTFOLIO_ENCRYPTION_KEY env var is not set"</h3>
+      <p>The notify pipeline needs the Fernet key. Set it as a repo secret (generation command in §10). Until set, the screener still runs and renders the dashboard — only Telegram features are skipped.</p>
+    </div>
+    <div class="card">
+      <h3>Lost the encryption key</h3>
+      <p>The encrypted <code>state.enc</code> is unrecoverable. Delete <code>state.enc</code> in the repo, generate a new <code>PORTFOLIO_ENCRYPTION_KEY</code>, and re-add positions with <code>/add</code>. Back up the key separately next time (1Password, etc.).</p>
     </div>
   </div>
 </section>

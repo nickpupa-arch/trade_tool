@@ -13,7 +13,7 @@ on:
       - ".github/workflows/refresh.yml"
 
 permissions:
-  contents: read
+  contents: write   # needs write so the workflow can commit state.enc back to main
   pages: write
   id-token: write
 
@@ -27,6 +27,11 @@ jobs:
     defaults:
       run:
         working-directory: "Trading Tool"
+    env:
+      # Set as GitHub repo secrets. Bot/notify steps no-op if any are unset.
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      PORTFOLIO_ENCRYPTION_KEY: ${{ secrets.PORTFOLIO_ENCRYPTION_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,8 +44,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run the screener
-        run: python run.py --no-open --out _site/dashboard.html
+      - name: Run the screener (with bot + alerts when configured)
+        run: python run.py --no-open --notify --out _site/dashboard.html
+
+      - name: Verify no portfolio data leaked into _site/
+        # Defense-in-depth: the Pages artifact must not contain any encrypted
+        # blob or other portfolio-shaped file. Fail loudly if it does.
+        run: |
+          if find _site -maxdepth 3 \( -name "state*" -o -name "portfolio*" \) | grep -q .; then
+            echo "ERROR: portfolio-shaped files found in _site/ — aborting deploy"
+            find _site -maxdepth 3 \( -name "state*" -o -name "portfolio*" \)
+            exit 1
+          fi
 
       - name: Copy static assets
         run: |
@@ -55,6 +70,26 @@ jobs:
           <link rel="canonical" href="dashboard.html">
           <title>Trading Tool</title>
           HTML
+
+      - name: Commit state.enc back to main (if changed)
+        # state.enc is the Fernet-encrypted portfolio + bot state. Plaintext
+        # never lands in the repo. Skip-ci on the message so this commit
+        # doesn't retrigger the workflow.
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ ! -f state.enc ]; then
+            echo "No state.enc to commit — skipping"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.enc
+          if git diff --cached --quiet; then
+            echo "state.enc unchanged — nothing to commit"
+            exit 0
+          fi
+          git commit -m "bot: update encrypted state [skip ci]"
+          git push origin HEAD:main
 
       - uses: actions/upload-pages-artifact@v3
         with:
