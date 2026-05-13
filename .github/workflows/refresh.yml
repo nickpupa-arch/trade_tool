@@ -74,8 +74,9 @@ jobs:
       - name: Commit state.enc back to main (if changed)
         # state.enc is the Fernet-encrypted portfolio + bot state. Plaintext
         # never lands in the repo. Skip-ci on the message so this commit
-        # doesn't retrigger the workflow.
-        if: github.event_name != 'pull_request'
+        # doesn't retrigger the workflow. Only on main — branch test runs
+        # via workflow_dispatch should not write to main's state.
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: |
           if [ ! -f state.enc ]; then
             echo "No state.enc to commit — skipping"
@@ -92,10 +93,15 @@ jobs:
           git push origin HEAD:main
 
       - uses: actions/upload-pages-artifact@v3
+        # Only upload the Pages artifact when we're going to deploy it (main).
+        # Branch test runs build everything but stop short of Pages.
+        if: github.ref == 'refs/heads/main'
         with:
           path: "Trading Tool/_site"
 
   deploy:
+    # Only deploy from main. Branch workflow_dispatch runs build + test only.
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:
