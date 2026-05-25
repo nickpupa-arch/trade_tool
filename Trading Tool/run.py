@@ -84,11 +84,17 @@ def main() -> None:
     print("Fetching SPY benchmark…")
     spy = fetch_benchmark("SPY", cache_dir=CACHE_DIR, cache_minutes=cache_minutes)
     if spy.empty:
-        raise SystemExit("Failed to fetch SPY — check your internet connection.")
+        print("[skip] SPY data unavailable after retries (Yahoo likely rate-limiting). "
+              "Keeping the last good dashboard live; exiting cleanly.")
+        return
 
     print("Fetching ticker history…")
     prices = fetch_prices(tickers, cache_dir=CACHE_DIR, cache_minutes=cache_minutes)
     print(f"  Got history for {len(prices)} / {len(tickers)} tickers")
+    if not prices:
+        print("[skip] No ticker history fetched (data unavailable). "
+              "Keeping the last good dashboard live; exiting cleanly.")
+        return
 
     if args.top and args.top < len(prices):
         prices = filter_by_liquidity(prices, top_n=args.top)
@@ -96,6 +102,10 @@ def main() -> None:
 
     print("Running screener…")
     regime, results = run_screener(prices, spy)
+    if results is None or results.empty:
+        print("[skip] Screener produced no scored tickers (data unavailable). "
+              "Keeping the last good dashboard live; exiting cleanly.")
+        return
     print(f"  Market regime: {regime['regime']}  |  Suggested exposure: {regime['exposure']}")
     print(f"  {len(results)} tickers scored")
     print(f"  Top action picks: {(results['action'] == '1 ACTION BUY').sum()} ACTION BUY"
