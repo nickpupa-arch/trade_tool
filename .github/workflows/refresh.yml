@@ -30,6 +30,11 @@ jobs:
     defaults:
       run:
         working-directory: "Trading Tool"
+    outputs:
+      # 'true' only when a fresh dashboard was produced. When Yahoo is down,
+      # run.py exits 0 without writing _site/, so this stays 'false' and the
+      # deploy/asset/upload steps skip — keeping the last good deploy live.
+      built: ${{ steps.screener.outputs.built }}
     env:
       # Set as GitHub repo secrets. Bot/notify steps no-op if any are unset.
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -48,11 +53,20 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run the screener (with bot + alerts when configured)
-        run: python run.py --no-open --notify --out _site/dashboard.html
+        id: screener
+        run: |
+          python run.py --no-open --notify --out _site/dashboard.html
+          if [ -f _site/dashboard.html ]; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Data fetch unavailable — no fresh dashboard. Skipping deploy; last good deploy stays live."
+          fi
 
       - name: Verify no portfolio data leaked into _site/
         # Defense-in-depth: the Pages artifact must not contain any encrypted
         # blob or other portfolio-shaped file. Fail loudly if it does.
+        if: steps.screener.outputs.built == 'true'
         run: |
           if find _site -maxdepth 3 \( -name "state*" -o -name "portfolio*" \) | grep -q .; then
             echo "ERROR: portfolio-shaped files found in _site/ — aborting deploy"
@@ -61,6 +75,7 @@ jobs:
           fi
 
       - name: Copy static assets
+        if: steps.screener.outputs.built == 'true'
         run: |
           cp how-to.html      _site/
           cp manifest.webmanifest _site/
@@ -108,15 +123,16 @@ jobs:
           }
 
       - uses: actions/upload-pages-artifact@v3
-        # Only upload the Pages artifact when we're going to deploy it (main).
-        # Branch test runs build everything but stop short of Pages.
-        if: github.ref == 'refs/heads/main'
+        # Only upload when we built a fresh dashboard on main. Branch test runs
+        # and data-outage skips both stop short of Pages.
+        if: github.ref == 'refs/heads/main' && steps.screener.outputs.built == 'true'
         with:
           path: "Trading Tool/_site"
 
   deploy:
-    # Only deploy from main. Branch workflow_dispatch runs build + test only.
-    if: github.ref == 'refs/heads/main'
+    # Deploy only from main AND only when a fresh dashboard was built. On a
+    # data-outage skip, built == 'false' so we keep the last good deploy live.
+    if: github.ref == 'refs/heads/main' && needs.build.outputs.built == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:

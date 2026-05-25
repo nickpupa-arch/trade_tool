@@ -13,6 +13,33 @@ from pathlib import Path
 import pandas as pd
 
 
+def _download_with_retry(download_fn, *, label: str,
+                         attempts: int = 4, base_delay: float = 2.0):
+    """Call a yfinance download, retrying on empty/exception with backoff.
+
+    Yahoo frequently rate-limits or transiently 403s automated clients
+    (esp. CI runner IP blocks). A single empty response would otherwise
+    cascade into a hard failure, so retry with 2s/4s/8s backoff before
+    giving up. Returns an empty DataFrame if all attempts fail — callers
+    decide how to handle that.
+    """
+    last_err = "empty result"
+    for i in range(attempts):
+        try:
+            df = download_fn()
+            if df is not None and not df.empty:
+                return df
+        except Exception as exc:  # noqa: BLE001
+            last_err = str(exc)
+        if i < attempts - 1:
+            delay = base_delay * (2 ** i)
+            print(f"  [retry] {label}: {last_err} — retrying in {delay:.0f}s "
+                  f"(attempt {i + 1}/{attempts})")
+            time.sleep(delay)
+    print(f"  [retry] {label}: giving up after {attempts} attempts ({last_err})")
+    return pd.DataFrame()
+
+
 # The 11 GICS sector SPDR ETFs that Excel's "Sector Rankings" tab tracks.
 # Same screener math is applied to these — rank the sectors against each other.
 SECTOR_ETFS = {
@@ -67,14 +94,17 @@ def fetch_prices(tickers: list[str],
     for i in range(0, len(tickers), chunk_size):
         chunk = tickers[i:i + chunk_size]
         print(f"  Downloading {i+1}-{i+len(chunk)} of {len(tickers)}...")
-        df = yf.download(
-            chunk,
-            period=period,
-            interval="1d",
-            group_by="ticker",
-            auto_adjust=True,
-            threads=True,
-            progress=False,
+        df = _download_with_retry(
+            lambda chunk=chunk: yf.download(
+                chunk,
+                period=period,
+                interval="1d",
+                group_by="ticker",
+                auto_adjust=True,
+                threads=True,
+                progress=False,
+            ),
+            label=f"chunk {i+1}-{i+len(chunk)}",
         )
         if df.empty:
             continue
@@ -127,8 +157,17 @@ def fetch_benchmark(symbol: str = "SPY",
             if age_min < cache_minutes:
                 return pd.read_parquet(cache_path)
 
-    df = yf.download(symbol, period=period, interval="1d",
-                     auto_adjust=True, progress=False)
+    df = _download_with_retry(
+        lambda: yf.download(symbol, period=period, interval="1d",
+                            auto_adjust=True, progress=False),
+        label=f"benchmark {symbol}",
+    )
+    if df.empty:
+        # Fall back to a stale cache if we have one — better than nothing.
+        if cache_path is not None and cache_path.exists():
+            print(f"  [retry] benchmark {symbol}: using stale cache as fallback")
+            return pd.read_parquet(cache_path)
+        return df
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
