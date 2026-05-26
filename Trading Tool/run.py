@@ -129,9 +129,6 @@ def main() -> None:
             PINE_PATH.write_text(pine_src, encoding="utf-8")
             print(f"[pine] Wrote {PINE_PATH.name} for {len(top_buys)} ticker(s)")
 
-    if args.notify or args.digest:
-        _run_notify_pipeline(regime, results, force_digest=args.digest)
-
     # Sector ETF screener (port of Excel "Sector Rankings" tab)
     sector_etfs = None
     if not args.no_sectors:
@@ -159,6 +156,16 @@ def main() -> None:
     csv_out = Path(args.out).with_suffix(".csv")
     results.to_csv(csv_out, index=False)
     print(f"Raw results → {csv_out}")
+
+    # Notifications run LAST and are fully isolated: the dashboard is already
+    # rendered + written above, so a bug in the bot/alert layer can never block
+    # the build or the Pages deploy. Belt-and-suspenders on top of the internal
+    # try/excepts in _run_notify_pipeline.
+    if args.notify or args.digest:
+        try:
+            _run_notify_pipeline(regime, results, force_digest=args.digest)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[notify] pipeline crashed (non-fatal, dashboard already built): {exc}")
 
     if not args.no_open:
         webbrowser.open(out.as_uri())
