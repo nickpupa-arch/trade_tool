@@ -107,20 +107,25 @@ jobs:
             echo "state.enc unchanged — nothing to commit"
             exit 0
           fi
-          # Rebase before push in case bot.yml pushed since checkout
-          git stash
-          git pull --rebase origin main || {
-            echo "rebase failed — abandoning this commit; next tick will retry"
-            git stash pop || true
+          # Commit first (no stash dance), then push with rebase-retry. state.enc
+          # is a binary blob, so on a race with bot.yml we resolve conflicts with
+          # -X ours (this run's freshly-computed state wins). State persistence is
+          # a side-effect: it must NEVER fail the build, so every path exits 0.
+          git commit -m "bot: update encrypted state [skip ci]" || {
+            echo "nothing to commit after staging — skipping"
             exit 0
           }
-          git stash pop
-          git add state.enc
-          git commit -m "bot: update encrypted state [skip ci]"
-          git push origin HEAD:main || {
-            echo "push failed (race with bot.yml) — next tick will retry"
-            exit 0
-          }
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "state.enc pushed"
+              exit 0
+            fi
+            echo "push rejected (race with bot.yml?) — rebasing and retrying ($attempt/3)"
+            git pull --rebase -X ours origin main || git rebase --abort || true
+            sleep $((attempt * 2))
+          done
+          echo "could not push state after 3 attempts — next tick will retry (non-fatal)"
+          exit 0
 
       - uses: actions/upload-pages-artifact@v3
         # Only upload when we built a fresh dashboard on main. Branch test runs

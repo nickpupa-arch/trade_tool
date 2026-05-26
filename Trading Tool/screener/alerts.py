@@ -47,6 +47,36 @@ def _fmt_money(v) -> str:
     return f"${v:,.2f}"
 
 
+def _safe_int(v, default: str = "—") -> str:
+    """int() that tolerates None/NaN — real Yahoo data has gaps where the
+    screener couldn't compute a rank/value."""
+    if v is None or pd.isna(v):
+        return default
+    try:
+        return str(int(v))
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_f2(v, default: str = "—") -> str:
+    """Two-decimal float format that tolerates None/NaN."""
+    if v is None or pd.isna(v):
+        return default
+    try:
+        return f"{float(v):.2f}"
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_money(v, default: str = "—") -> str:
+    if v is None or pd.isna(v):
+        return default
+    try:
+        return f"{float(v):,.2f}"
+    except (ValueError, TypeError):
+        return default
+
+
 # ---------------------------------------------------------------------------
 # 1) Morning digest — once per ET trading day
 # ---------------------------------------------------------------------------
@@ -114,8 +144,8 @@ def morning_digest(regime: dict, state: State, results: pd.DataFrame,
             lines.append("*Top ACTION BUYs today*")
             for _, r in buys.iterrows():
                 lines.append(_safe_md(
-                    f"`{r['ticker']}` rank \\#{int(r['final_rank'])} · "
-                    f"\\${r['live_price']:,.2f} · ext {r['extension_ratio']:.2f}"
+                    f"`{r['ticker']}` rank \\#{_safe_int(r['final_rank'])} · "
+                    f"\\${_safe_money(r['live_price'])} · ext {_safe_f2(r['extension_ratio'])}"
                 ))
 
     # Mark digest sent
@@ -232,7 +262,7 @@ def tv_trigger_alerts(state: State, results: pd.DataFrame,
         price = float(row["live_price"]) if pd.notna(row.get("live_price")) else 0.0
         alerts.append(_safe_md(
             f"🔔 *{escape_md(ticker)}* triggers firing: *{escape_md(names)}*\n"
-            f"Price \\${price:,.2f} · rank \\#{int(row['final_rank'])}"
+            f"Price \\${price:,.2f} · rank \\#{_safe_int(row['final_rank'])}"
         ))
     return alerts
 
@@ -270,8 +300,8 @@ def new_top20_buys(results: pd.DataFrame, prev_top20: Iterable[str]) -> list[str
     for t in fresh:
         r = _row_for(results, t)
         lines.append(_safe_md(
-            f"`{t}` rank \\#{int(r['final_rank'])} · "
-            f"\\${r['live_price']:,.2f} · ext {r['extension_ratio']:.2f}"
+            f"`{t}` rank \\#{_safe_int(r['final_rank'])} · "
+            f"\\${_safe_money(r['live_price'])} · ext {_safe_f2(r['extension_ratio'])}"
         ))
     return ["\n".join(lines)]
 
