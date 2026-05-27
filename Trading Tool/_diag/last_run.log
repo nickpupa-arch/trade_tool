@@ -22,22 +22,17 @@ Fetching ticker history…
   Downloading 401-450 of 517...
   Downloading 451-500 of 517...
   Downloading 501-517 of 517...
-Traceback (most recent call last):
-  File "/home/runner/work/trade_tool/trade_tool/Trading Tool/run.py", line 329, in <module>
-    main()
-  File "/home/runner/work/trade_tool/trade_tool/Trading Tool/run.py", line 92, in main
-    prices = fetch_prices(tickers, cache_dir=CACHE_DIR, cache_minutes=cache_minutes)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/trade_tool/trade_tool/Trading Tool/screener/fetch.py", line 131, in fetch_prices
-    return _split_by_ticker(full)
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/trade_tool/trade_tool/Trading Tool/screener/fetch.py", line 137, in _split_by_ticker
-    sub = sub.sort_values("Date").set_index("Date")
-          ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/pandas/core/frame.py", line 8359, in sort_values
-    k = self._get_label_or_level_values(by[0], axis=axis)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/pandas/core/generic.py", line 1776, in _get_label_or_level_values
-    raise KeyError(key)
-KeyError: 'Date'
-=== screener exit code: 1 ===
+  Got history for 515 / 517 tickers
+  Filtered to top 500 by 30D dollar volume
+Running screener…
+  Market regime: Risk On  |  Suggested exposure: 80% - 100%
+  500 tickers scored
+  Top action picks: 3 ACTION BUY, 0 STARTERS, 11 BUYABLE WATCH
+[triggers] squeeze_on: 69 | squeeze_fire: 4 | macd_bull_cross: 74 | rsi_bull_divergence: 46 | vol_surge: 7
+Fetching sector ETFs…
+  Downloading 1-11 of 11...
+  Sector leader: XLK (Technology)  3M=+32.1%
+Rendering dashboard → _site/dashboard.html
+Raw results → _site/dashboard.csv
+[notify] state.enc updated
+=== screener exit code: 0 ===
