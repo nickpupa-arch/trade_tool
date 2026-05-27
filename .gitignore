@@ -5,3 +5,4 @@ __pycache__/
 dashboard.html
 dashboard.csv
 _site/
+_diag/
