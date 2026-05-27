@@ -55,40 +55,37 @@ jobs:
       - name: Run the screener (with bot + alerts when configured)
         id: screener
         run: |
-          # Capture all output so we can commit a diagnostic log (the only
-          # CI-log channel we can read back). Preserve the real exit code.
+          # Capture output so a failure can publish its log (the only CI-log
+          # channel readable from the agent). Preserve the real exit code.
           set +e
           python run.py --no-open --notify --out _site/dashboard.html 2>&1 | tee /tmp/run.log
           rc=${PIPESTATUS[0]}
           set -e
-          echo "=== screener exit code: $rc ===" | tee -a /tmp/run.log
-          mkdir -p _diag
-          tail -c 80000 /tmp/run.log > _diag/last_run.log
-          echo "$rc" > _diag/last_exit_code.txt
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > _diag/last_run_at.txt
           if [ -f _site/dashboard.html ]; then
             echo "built=true" >> "$GITHUB_OUTPUT"
           else
             echo "built=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Data fetch unavailable — no fresh dashboard. Skipping deploy; last good deploy stays live."
           fi
-          # Re-raise the real exit code so the build still reflects reality.
+          if [ "$rc" != "0" ]; then
+            mkdir -p _diag
+            tail -c 80000 /tmp/run.log > _diag/last_failure.log
+            echo "$rc" > _diag/last_exit_code.txt
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > _diag/last_failure_at.txt
+          fi
           exit $rc
 
-      - name: Commit diagnostics (always)
-        # Runs even when the screener step fails, so the captured log + exit
-        # code land on main where they can be inspected. [skip ci] avoids
-        # retriggering the workflow.
-        if: always() && github.ref == 'refs/heads/main'
+      - name: Publish failure diagnostics
+        # ONLY on failure — keeps successful runs from spamming commits. The
+        # captured log lands on main for inspection. [skip ci] avoids retrigger.
+        if: failure() && github.ref == 'refs/heads/main'
         run: |
+          [ -f _diag/last_failure.log ] || exit 0
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f _diag/last_run.log _diag/last_exit_code.txt _diag/last_run_at.txt 2>/dev/null || true
-          if git diff --cached --quiet; then
-            echo "no diag changes"
-            exit 0
-          fi
-          git commit -m "ci: diagnostics [skip ci]" || exit 0
+          git add -f _diag/last_failure.log _diag/last_exit_code.txt _diag/last_failure_at.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m "ci: failure diagnostics [skip ci]" || exit 0
           for attempt in 1 2 3; do
             git push origin HEAD:main && exit 0
             git pull --rebase -X ours origin main || git rebase --abort || true
