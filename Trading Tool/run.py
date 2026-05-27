@@ -129,25 +129,34 @@ def main() -> None:
             PINE_PATH.write_text(pine_src, encoding="utf-8")
             print(f"[pine] Wrote {PINE_PATH.name} for {len(top_buys)} ticker(s)")
 
-    # Sector ETF screener (port of Excel "Sector Rankings" tab)
+    # Sector ETF screener (port of Excel "Sector Rankings" tab).
+    # Optional panel — never let it fail the build. If the ETF fetch is sparse,
+    # run_screener can return an empty frame with no 'ticker' column, so guard
+    # every access and fall back to no panel on any error.
     sector_etfs = None
     if not args.no_sectors:
-        print("Fetching sector ETFs…")
-        etf_prices = fetch_prices(list(SECTOR_ETFS),
-                                  cache_dir=CACHE_DIR, cache_minutes=cache_minutes,
-                                  cache_name="sector_etfs")
-        if etf_prices:
-            _, sector_etfs = run_screener(etf_prices, spy)
-            # Defensive: only keep rows that are actually sector ETFs.
-            sector_etfs = sector_etfs[sector_etfs["ticker"].isin(SECTOR_ETFS)].copy()
-            sector_etfs["sector_name"] = sector_etfs["ticker"].map(SECTOR_ETFS)
-            sector_etfs = sector_etfs.reset_index(drop=True)
-            if not sector_etfs.empty:
-                leader = sector_etfs.iloc[0]
-                print(f"  Sector leader: {leader['ticker']} ({leader['sector_name']})"
-                      f"  3M={leader['ret_3m']*100:+.1f}%")
-            else:
-                sector_etfs = None
+        try:
+            print("Fetching sector ETFs…")
+            etf_prices = fetch_prices(list(SECTOR_ETFS),
+                                      cache_dir=CACHE_DIR, cache_minutes=cache_minutes,
+                                      cache_name="sector_etfs")
+            if etf_prices:
+                _, sector_etfs = run_screener(etf_prices, spy)
+                if sector_etfs is None or sector_etfs.empty or "ticker" not in sector_etfs.columns:
+                    sector_etfs = None
+                else:
+                    sector_etfs = sector_etfs[sector_etfs["ticker"].isin(SECTOR_ETFS)].copy()
+                    sector_etfs["sector_name"] = sector_etfs["ticker"].map(SECTOR_ETFS)
+                    sector_etfs = sector_etfs.reset_index(drop=True)
+                    if not sector_etfs.empty:
+                        leader = sector_etfs.iloc[0]
+                        print(f"  Sector leader: {leader['ticker']} ({leader['sector_name']})"
+                              f"  3M={leader['ret_3m']*100:+.1f}%")
+                    else:
+                        sector_etfs = None
+        except Exception as exc:  # noqa: BLE001
+            print(f"[sectors] skipped (non-fatal): {exc}")
+            sector_etfs = None
 
     print(f"Rendering dashboard → {args.out}")
     out = render(regime, results, args.out,
