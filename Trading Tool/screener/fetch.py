@@ -123,7 +123,7 @@ def fetch_prices(tickers: list[str],
     full = pd.concat(frames, ignore_index=True)
     # standardize column names
     full.columns = [c if isinstance(c, str) else c[0] for c in full.columns]
-    full = full.rename(columns={"Date": "Date"})
+    full = _normalize_date_column(full)
 
     if cache_path:
         full.to_parquet(cache_path, index=False)
@@ -131,11 +131,38 @@ def fetch_prices(tickers: list[str],
     return _split_by_ticker(full)
 
 
+def _normalize_date_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure the date column is named 'Date'.
+
+    yfinance's index name has drifted across versions ('Date', 'Datetime',
+    sometimes unnamed → 'index'/'level_0' after reset_index). Rename whatever
+    holds the dates to 'Date'. Falls back to the first datetime-typed column so
+    we're robust to future renames too.
+    """
+    if "Date" in df.columns:
+        return df
+    for cand in ("Datetime", "datetime", "date", "index", "level_0", "Unnamed: 0"):
+        if cand in df.columns:
+            return df.rename(columns={cand: "Date"})
+    for c in df.columns:
+        try:
+            if pd.api.types.is_datetime64_any_dtype(df[c]):
+                return df.rename(columns={c: "Date"})
+        except (TypeError, ValueError):
+            continue
+    return df
+
+
 def _split_by_ticker(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    df = _normalize_date_column(df)
+    if "Date" not in df.columns or "Ticker" not in df.columns:
+        print(f"[fetch] unexpected columns from yfinance: {list(df.columns)}")
+        return {}
     out = {}
     for t, sub in df.groupby("Ticker"):
         sub = sub.sort_values("Date").set_index("Date")
-        sub = sub[["Open", "High", "Low", "Close", "Volume"]].dropna(how="all")
+        keep = [c for c in ("Open", "High", "Low", "Close", "Volume") if c in sub.columns]
+        sub = sub[keep].dropna(how="all")
         if not sub.empty:
             out[t] = sub
     return out
