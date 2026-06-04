@@ -1,11 +1,14 @@
 name: Refresh dashboard
 
 on:
-  # Every 15 min during US market hours (Mon-Fri, 13:00-22:00 UTC).
-  # 13:00 UTC = 9:00 ET (EDT) / 8:00 ET (EST). Covers both DST regimes.
+  # GitHub's schedule trigger is "best effort" — drops most runs under load.
+  # Kept as a fallback. The PRIMARY trigger is repository_dispatch fired by
+  # an external scheduler (e.g. cron-job.org), which has reliable timing.
   schedule:
     - cron: "*/15 13-22 * * 1-5"
   workflow_dispatch:
+  repository_dispatch:
+    types: [refresh-dashboard]
   push:
     branches: [main]
     paths:
