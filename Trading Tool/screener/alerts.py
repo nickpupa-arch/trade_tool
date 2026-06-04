@@ -315,3 +315,79 @@ def current_top20_buys(results: pd.DataFrame) -> list[str]:
         & (results["final_rank"] <= 20)
     ].sort_values("final_rank").head(20)
     return buys["ticker"].tolist()
+
+
+# ---------------------------------------------------------------------------
+# Intraday "fast lane" alerts
+# ---------------------------------------------------------------------------
+from .intraday import INTRADAY_TRIGGER_KEYS  # noqa: E402
+
+_INTRADAY_LABELS = {
+    "vol_spike": "📊 Vol Spike",
+    "gap_up": "🔼 Gap Up",
+    "momentum_burst": "🚀 Burst",
+    "orb_break_long": "🟢 ORB Break",
+}
+
+
+def _intraday_context(row) -> str:
+    """One-line MarkdownV2-safe context for an intraday alert."""
+    bits = []
+    rvol = row.get("rvol")
+    if rvol is not None and pd.notna(rvol):
+        bits.append(f"RVOL {float(rvol):.1f}")
+    roc = row.get("roc_15m")
+    if roc is not None and pd.notna(roc):
+        s = "+" if roc >= 0 else ""
+        bits.append(f"{s}{roc * 100:.1f}% 15m")
+    gap = row.get("gap_pct")
+    if gap is not None and pd.notna(gap):
+        s = "+" if gap >= 0 else ""
+        bits.append(f"gap {s}{gap * 100:.1f}%")
+    price = row.get("last_price")
+    if price is not None and pd.notna(price):
+        bits.append(f"${float(price):,.2f}")
+    pvv = row.get("price_vs_vwap")
+    if pvv is not None and pd.notna(pvv):
+        bits.append("above VWAP" if pvv >= 0 else "below VWAP")
+    return " · ".join(bits)
+
+
+def intraday_alerts(state: State, table: pd.DataFrame,
+                    today_iso: str | None = None) -> list[str]:
+    """Fire one alert per (ticker, trigger) per day for newly-firing intraday
+    triggers. Mutates state.intraday_snapshot (the dedup record) in place.
+
+    table: the per-ticker DataFrame from intraday.compute_intraday_table().
+    """
+    today = today_iso or dt.date.today().isoformat()
+    # Reset the dedup record on a new trading day.
+    if state.intraday_snapshot_date != today:
+        state.intraday_snapshot = {}
+        state.intraday_snapshot_date = today
+
+    if table is None or table.empty:
+        return []
+
+    messages: list[str] = []
+    for _, row in table.iterrows():
+        ticker = row.get("ticker")
+        if not ticker:
+            continue
+        firing = [k for k in INTRADAY_TRIGGER_KEYS if bool(row.get(k))]
+        if not firing:
+            continue
+        already = set(state.intraday_snapshot.get(ticker, []))
+        fresh = [k for k in firing if k not in already]
+        if not fresh:
+            continue
+        labels = ", ".join(_INTRADAY_LABELS.get(k, k) for k in fresh)
+        lead = "🚀" if "momentum_burst" in fresh else "📈"
+        body = (
+            f"{lead} *{escape_md(str(ticker))}* intraday: *{escape_md(labels)}*\n"
+            f"{_intraday_context(row)}"
+        )
+        messages.append(_safe_md(body))
+        state.intraday_snapshot[ticker] = sorted(already | set(firing))
+
+    return messages

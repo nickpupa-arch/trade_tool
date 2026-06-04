@@ -295,3 +295,42 @@ def compute_intraday_table(intraday_data: dict[str, pd.DataFrame],
     df["_rvol_sort"] = df["rvol"].fillna(-1.0)
     df = df.sort_values("_rvol_sort", ascending=False).drop(columns="_rvol_sort")
     return df.reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
+# Watchlist
+# ---------------------------------------------------------------------------
+def build_watchlist(portfolio_tickers: list[str],
+                    ranked: list[tuple[str, float]] | None = None,
+                    top_n: int = 30,
+                    extra: list[str] | None = None,
+                    cap: int = 100) -> list[str]:
+    """Assemble the focused intraday watchlist.
+
+    portfolio_tickers: names you hold (always watched).
+    ranked: [(ticker, final_rank), ...] from the daily screener — the top_n by
+            rank (lowest number = best) are added.
+    extra: optional extra symbols (e.g. a premarket gapper pre-pass).
+    cap: hard ceiling so a 1-minute cycle stays fast.
+
+    Returns a de-duplicated, order-preserving list: holdings first (highest
+    priority), then top-ranked names, then extras.
+    """
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def _add(sym):
+        s = str(sym).strip().upper()
+        if s and s not in seen:
+            seen.add(s)
+            ordered.append(s)
+
+    for t in portfolio_tickers or []:
+        _add(t)
+    if ranked:
+        for t, _rank in sorted(ranked, key=lambda x: (x[1] if x[1] is not None else 1e9))[:top_n]:
+            _add(t)
+    for t in extra or []:
+        _add(t)
+
+    return ordered[:cap]
