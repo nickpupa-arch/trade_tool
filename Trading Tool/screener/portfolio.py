@@ -24,6 +24,21 @@ from typing import Any
 
 STATE_FILE = Path(__file__).resolve().parent.parent / "state.enc"
 ENV_KEY = "PORTFOLIO_ENCRYPTION_KEY"
+STATE_PATH_ENV = "STATE_PATH"
+
+
+def _resolve_state_path(path: Path | str | None) -> Path:
+    """Pick the state.enc path. Precedence: explicit arg > STATE_PATH env > default.
+
+    The env override exists so a Fly.io deployment can point at a mounted
+    Volume (e.g. /data/state.enc) without code changes — single source of
+    truth, no per-call plumbing. Local runs still default to repo-root."""
+    if path is not None:
+        return Path(path)
+    env = os.environ.get(STATE_PATH_ENV)
+    if env:
+        return Path(env)
+    return STATE_FILE
 
 
 @dataclass
@@ -118,7 +133,7 @@ def _fernet():
 
 def load_state(path: Path | str | None = None) -> State:
     """Decrypt + deserialize state. Returns empty State if file is missing."""
-    path = Path(path) if path else STATE_FILE
+    path = _resolve_state_path(path)
     if not path.exists():
         return State()
     blob = path.read_bytes()
@@ -130,7 +145,7 @@ def load_state(path: Path | str | None = None) -> State:
 
 def save_state(state: State, path: Path | str | None = None) -> Path:
     """Serialize + encrypt state to disk."""
-    path = Path(path) if path else STATE_FILE
+    path = _resolve_state_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = state.to_json().encode("utf-8")
     path.write_bytes(_fernet().encrypt(raw))
