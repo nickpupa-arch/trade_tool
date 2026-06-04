@@ -1,0 +1,46 @@
+# Fly.io configuration. Edit `app` to your chosen name after `fly launch`.
+#
+# Single machine, always-on (the bot poller + HTTP server need to be live),
+# 512MB RAM, shared CPU. Volume `trade_tool_data` mounted at /data holds
+# state.enc — daily snapshots enabled separately via `fly volumes update`.
+
+app = "trade-tool"           # CHANGE ME after fly launch
+primary_region = "ord"       # Chicago — close to NYSE; pick yours
+kill_signal = "SIGTERM"
+kill_timeout = "15s"         # loop.py drains in-flight workers in <10s
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  STATE_PATH       = "/data/state.enc"
+  PORT             = "8080"
+  INTRADAY_PERIOD_S = "60"
+  DAILY_PERIOD_S    = "300"
+  BOT_PERIOD_S      = "60"
+
+# Persistent disk for the encrypted state blob.
+[mounts]
+  source      = "trade_tool_data"
+  destination = "/data"
+
+# Always-on HTTP service. /health is the Fly check.
+[http_service]
+  internal_port      = 8080
+  force_https        = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes          = ["app"]
+
+  [[http_service.checks]]
+    interval     = "30s"
+    timeout      = "5s"
+    grace_period = "60s"
+    method       = "GET"
+    path         = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus     = 1
+  memory   = "512mb"

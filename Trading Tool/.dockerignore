@@ -1,0 +1,19 @@
+# Keep the build context small + don't bake mutable state into the image.
+.git
+.github
+.cache
+__pycache__
+*.pyc
+*.pyo
+_site
+_diag
+.venv
+venv
+dashboard.html
+dashboard.csv
+intraday.json
+# state.enc is volume-mounted at /data on Fly, but a local copy may exist
+# for GitHub Actions runs — never bake it into the image either.
+state.enc
+.DS_Store
+.pytest_cache
