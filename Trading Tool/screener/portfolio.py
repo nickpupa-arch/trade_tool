@@ -61,6 +61,12 @@ class State:
     # Reset whenever intraday_snapshot_date rolls over to a new ET day.
     intraday_snapshot: dict[str, list[str]] = field(default_factory=dict)
     intraday_snapshot_date: str = ""
+    # Top-N ranked names + their prior daily closes, written by the daily
+    # screener so the intraday workflow can seed its watchlist without
+    # needing access to the (gitignored) dashboard.csv.
+    daily_top_ranked: list[list] = field(default_factory=list)  # [[ticker, rank], ...]
+    daily_prior_closes: dict[str, float] = field(default_factory=dict)
+    daily_snapshot_date: str = ""
 
     def to_json(self) -> str:
         return json.dumps({
@@ -72,6 +78,9 @@ class State:
             "top20_snapshot": self.top20_snapshot,
             "intraday_snapshot": self.intraday_snapshot,
             "intraday_snapshot_date": self.intraday_snapshot_date,
+            "daily_top_ranked": self.daily_top_ranked,
+            "daily_prior_closes": self.daily_prior_closes,
+            "daily_snapshot_date": self.daily_snapshot_date,
         }, indent=2, sort_keys=True)
 
     @classmethod
@@ -89,6 +98,9 @@ class State:
             top20_snapshot=data.get("top20_snapshot") or [],
             intraday_snapshot=data.get("intraday_snapshot") or {},
             intraday_snapshot_date=data.get("intraday_snapshot_date") or "",
+            daily_top_ranked=data.get("daily_top_ranked") or [],
+            daily_prior_closes=data.get("daily_prior_closes") or {},
+            daily_snapshot_date=data.get("daily_snapshot_date") or "",
         )
 
 
