@@ -19,6 +19,8 @@ import datetime as dt
 import webbrowser
 from pathlib import Path
 
+import pandas as pd
+
 from screener.universe import load_universe
 from screener.fetch import (
     fetch_prices,
@@ -369,14 +371,28 @@ def run_intraday_cycle() -> None:
 
     before = json.dumps(state.intraday_snapshot, sort_keys=True)
 
-    ranked, prior_closes = _ranked_and_closes_from_csv()
+    # Prefer the snapshot the daily run persisted into state.enc; fall back to
+    # a local dashboard.csv (works on dev machines where the daily run wrote
+    # one). The state path is what makes the GitHub Actions job work.
+    ranked, prior_closes = [], {}
+    today_iso = dt.date.today().isoformat()
+    if state.daily_top_ranked and state.daily_snapshot_date == today_iso:
+        ranked = [(t, r) for t, r in state.daily_top_ranked]
+        prior_closes = dict(state.daily_prior_closes)
+        print(f"[intraday] seed: state snapshot ({len(ranked)} ranked, dated {state.daily_snapshot_date})")
+    else:
+        ranked, prior_closes = _ranked_and_closes_from_csv()
+        if ranked:
+            print(f"[intraday] seed: dashboard.csv fallback ({len(ranked)} ranked)")
+
     watchlist = build_watchlist(
         portfolio_tickers=list(state.portfolio.keys()),
         ranked=ranked,
         top_n=30,
     )
     if not watchlist:
-        print("[intraday] empty watchlist (no portfolio + no dashboard.csv yet) — nothing to do.")
+        print("[intraday] empty watchlist (no portfolio + no daily snapshot in state.enc) — "
+              "wait for next daily refresh, then this will populate.")
         return
     print(f"[intraday] watching {len(watchlist)} tickers")
 
@@ -515,6 +531,23 @@ def _run_notify_pipeline(regime: dict, results, *, force_digest: bool) -> None:
         t: sorted(list(s)) for t, s in alerts_mod.snapshot_triggers(results).items()
     }
     state.top20_snapshot = alerts_mod.current_top20_buys(results)
+
+    # 4b) Snapshot top-N ranked + their prior closes so the intraday workflow
+    # (which checks out a fresh repo without dashboard.csv) can seed its
+    # watchlist from state.enc.
+    if results is not None and not results.empty:
+        top = results.nsmallest(50, "final_rank")
+        state.daily_top_ranked = [
+            [r["ticker"], float(r["final_rank"])]
+            for _, r in top.iterrows()
+            if r.get("ticker") and pd.notna(r.get("final_rank"))
+        ]
+        state.daily_prior_closes = {
+            r["ticker"]: float(r["prev_close"])
+            for _, r in top.iterrows()
+            if r.get("ticker") and pd.notna(r.get("prev_close"))
+        }
+        state.daily_snapshot_date = dt.date.today().isoformat()
 
     # 5) Persist
     try:
