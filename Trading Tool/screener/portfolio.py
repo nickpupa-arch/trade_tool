@@ -57,6 +57,10 @@ class State:
     action_snapshot: dict[str, str] = field(default_factory=dict)
     trigger_snapshot: dict[str, list[str]] = field(default_factory=dict)
     top20_snapshot: list[str] = field(default_factory=list)
+    # Intraday alert dedup: {ticker: [trigger names already fired today]}.
+    # Reset whenever intraday_snapshot_date rolls over to a new ET day.
+    intraday_snapshot: dict[str, list[str]] = field(default_factory=dict)
+    intraday_snapshot_date: str = ""
 
     def to_json(self) -> str:
         return json.dumps({
@@ -66,6 +70,8 @@ class State:
             "action_snapshot": self.action_snapshot,
             "trigger_snapshot": self.trigger_snapshot,
             "top20_snapshot": self.top20_snapshot,
+            "intraday_snapshot": self.intraday_snapshot,
+            "intraday_snapshot_date": self.intraday_snapshot_date,
         }, indent=2, sort_keys=True)
 
     @classmethod
@@ -81,6 +87,8 @@ class State:
             action_snapshot=data.get("action_snapshot") or {},
             trigger_snapshot=data.get("trigger_snapshot") or {},
             top20_snapshot=data.get("top20_snapshot") or [],
+            intraday_snapshot=data.get("intraday_snapshot") or {},
+            intraday_snapshot_date=data.get("intraday_snapshot_date") or "",
         )
 
 
