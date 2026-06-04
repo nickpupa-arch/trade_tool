@@ -1,0 +1,98 @@
+name: Intraday fast lane
+
+# Catches intraday momentum (RVOL spikes, gaps, ORB/VWAP breakouts) on a
+# focused watchlist and fires Telegram alerts. Runs far more often than the
+# daily refresh. GitHub's schedule trigger is lossy, so the PRIMARY driver is
+# repository_dispatch (type: intraday-refresh) fired by an external scheduler
+# (cron-job.org). The schedule below is a best-effort fallback.
+
+on:
+  schedule:
+    # Every 2 min, Mon-Fri 11:00-21:00 UTC (~7am-5pm ET both DST regimes —
+    # covers premarket gappers through the close). Best-effort; most ticks
+    # get dropped by GitHub, which is why repository_dispatch is primary.
+    - cron: "*/2 11-21 * * 1-5"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [intraday-refresh]
+
+permissions:
+  contents: write   # commits state.enc back ONLY when a new alert fires
+
+concurrency:
+  # Shared with refresh.yml + bot.yml so only one writer touches state.enc
+  # at a time. cancel-in-progress: false → wait, don't clobber.
+  group: state-update
+  cancel-in-progress: false
+
+jobs:
+  intraday:
+    # Only run on main. Branch dispatches are no-ops (can't corrupt prod state).
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "Trading Tool"
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      PORTFOLIO_ENCRYPTION_KEY: ${{ secrets.PORTFOLIO_ENCRYPTION_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "Trading Tool/requirements.txt"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run intraday cycle
+        id: cycle
+        run: |
+          set +e
+          python run.py --intraday 2>&1 | tee /tmp/intraday.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" != "0" ]; then
+            mkdir -p _diag
+            tail -c 60000 /tmp/intraday.log > _diag/last_intraday_failure.log
+            echo "$rc" > _diag/last_intraday_exit_code.txt
+          fi
+          exit $rc
+
+      - name: Commit state.enc back to main (only if changed)
+        # The cycle only rewrites state.enc when a NEW alert fired, so calm
+        # cycles leave it untouched and this commits nothing. Every path exits 0
+        # — intraday state persistence must never fail the workflow.
+        run: |
+          [ -f state.enc ] || exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.enc
+          git diff --cached --quiet && { echo "no new alerts — nothing to commit"; exit 0; }
+          git commit -m "intraday: alert state [skip ci]" || exit 0
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase -X ours origin main || git rebase --abort || true
+            sleep $((attempt * 2))
+          done
+          exit 0
+
+      - name: Publish failure diagnostics
+        if: failure() && github.ref == 'refs/heads/main'
+        run: |
+          [ -f _diag/last_intraday_failure.log ] || exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f _diag/last_intraday_failure.log _diag/last_intraday_exit_code.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m "ci: intraday failure diagnostics [skip ci]" || exit 0
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase -X ours origin main || git rebase --abort || true
+            sleep $((attempt * 2))
+          done
+          exit 0
