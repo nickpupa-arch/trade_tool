@@ -168,9 +168,16 @@ def main() -> None:
             print(f"[sectors] skipped (non-fatal): {exc}")
             sector_etfs = None
 
+    # Intraday Movers panel — compute the fast-lane table for the focused
+    # watchlist so the daily dashboard shows live RVOL/gap/ORB status. Alerts
+    # are NOT fired here (that's intraday.yml's job) — this is render-only.
+    # Fully isolated: a fetch hiccup must never block the daily build.
+    movers = _compute_movers_for_dashboard(results)
+
     print(f"Rendering dashboard → {args.out}")
     out = render(regime, results, args.out,
-                 generated_at=dt.datetime.now(), sector_etfs=sector_etfs)
+                 generated_at=dt.datetime.now(), sector_etfs=sector_etfs,
+                 movers=movers)
 
     csv_out = Path(args.out).with_suffix(".csv")
     results.to_csv(csv_out, index=False)
@@ -265,6 +272,49 @@ def _run_bot_only() -> None:
         print("[bot-only] state.enc updated")
     except Exception as exc:  # noqa: BLE001
         print(f"[bot-only] Could not save state: {exc}")
+
+
+def _compute_movers_for_dashboard(results):
+    """Compute the intraday Movers table for the daily dashboard panel.
+
+    Render-only — does NOT fire alerts (intraday.yml owns alerting). Best-effort
+    watchlist: portfolio holdings (if state loads) + top-30 by final_rank from
+    the just-computed daily results. Any failure returns None so the daily build
+    is never blocked.
+    """
+    try:
+        from screener.fetch import fetch_intraday
+        from screener.intraday import build_watchlist, compute_intraday_table
+
+        portfolio_tickers = []
+        try:
+            portfolio_tickers = list(load_state().portfolio.keys())
+        except Exception:  # noqa: BLE001
+            pass  # no key / no state — top-ranked names still populate the panel
+
+        ranked, prior_closes = [], {}
+        if results is not None and not results.empty:
+            for _, r in results.iterrows():
+                t = r.get("ticker")
+                if t:
+                    ranked.append((t, r.get("final_rank")))
+                    if r.get("prev_close") is not None:
+                        prior_closes[t] = float(r["prev_close"])
+
+        watchlist = build_watchlist(portfolio_tickers, ranked=ranked, top_n=30)
+        if not watchlist:
+            return None
+        data = fetch_intraday(watchlist)
+        if not data:
+            print("[movers] no intraday data (market closed / rate-limited)")
+            return None
+        table = compute_intraday_table(data, prior_closes)
+        n = int((table["intraday_trigger_count"] > 0).sum()) if not table.empty else 0
+        print(f"[movers] {len(table)} watched, {n} with active intraday triggers")
+        return table
+    except Exception as exc:  # noqa: BLE001
+        print(f"[movers] skipped (non-fatal): {exc}")
+        return None
 
 
 def _ranked_and_closes_from_csv() -> tuple[list[tuple[str, float]], dict[str, float]]:
