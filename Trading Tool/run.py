@@ -39,6 +39,7 @@ HERE = Path(__file__).resolve().parent
 CACHE_DIR = HERE / ".cache"
 OUT_PATH = HERE / "dashboard.html"
 PINE_PATH = HERE / "dashboard_pine_alerts.pine"
+INTRADAY_JSON = HERE / "intraday.json"
 
 
 def main() -> None:
@@ -69,10 +70,19 @@ def main() -> None:
                     help="Skip the screener entirely. Just poll Telegram for "
                          "commands, reply, persist state. ~5s runtime — meant "
                          "for the 1-minute bot workflow.")
+    ap.add_argument("--intraday", action="store_true",
+                    help="Run one intraday fast-lane cycle: fetch 5m bars for "
+                         "the focused watchlist, compute RVOL/gap/ROC/VWAP/ORB, "
+                         "fire Telegram alerts, write intraday.json. No daily "
+                         "screener. Meant for the 1-2 min intraday workflow.")
     args = ap.parse_args()
 
     if args.bot_only:
         _run_bot_only()
+        return
+
+    if args.intraday:
+        run_intraday_cycle()
         return
 
     cache_minutes = 0 if args.fresh else 15
@@ -255,6 +265,145 @@ def _run_bot_only() -> None:
         print("[bot-only] state.enc updated")
     except Exception as exc:  # noqa: BLE001
         print(f"[bot-only] Could not save state: {exc}")
+
+
+def _ranked_and_closes_from_csv() -> tuple[list[tuple[str, float]], dict[str, float]]:
+    """Read (ticker, final_rank) and prior daily closes from the last
+    dashboard.csv written by the daily screener. Used to seed the intraday
+    watchlist + gap reference without re-running the 500-ticker screener."""
+    import csv
+    candidates = [HERE / "dashboard.csv", HERE / "_site" / "dashboard.csv"]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            ranked: list[tuple[str, float]] = []
+            closes: dict[str, float] = {}
+            with path.open() as fh:
+                for row in csv.DictReader(fh):
+                    t = (row.get("ticker") or "").strip()
+                    if not t:
+                        continue
+                    try:
+                        ranked.append((t, float(row["final_rank"])))
+                    except (KeyError, ValueError, TypeError):
+                        pass
+                    try:
+                        closes[t] = float(row["prev_close"])
+                    except (KeyError, ValueError, TypeError):
+                        pass
+            return ranked, closes
+        except Exception as exc:  # noqa: BLE001
+            print(f"[intraday] could not read {path}: {exc}")
+    return [], {}
+
+
+def run_intraday_cycle() -> None:
+    """One intraday fast-lane cycle. Reusable from a GitHub Action today and a
+    persistent Fly.io loop later — it's a single self-contained call.
+
+    Loads state → builds the focused watchlist → fetches 5m bars → computes
+    signals → fires deduped Telegram alerts → writes intraday.json → persists
+    state ONLY if the dedup record changed (so calm cycles produce no commit).
+    Every failure is caught: the cycle must never crash the workflow.
+    """
+    import json
+    from screener.fetch import fetch_intraday
+    from screener.intraday import build_watchlist, compute_intraday_table
+
+    try:
+        state = load_state()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[intraday] could not load state ({exc}); aborting cycle.")
+        return
+
+    before = json.dumps(state.intraday_snapshot, sort_keys=True)
+
+    ranked, prior_closes = _ranked_and_closes_from_csv()
+    watchlist = build_watchlist(
+        portfolio_tickers=list(state.portfolio.keys()),
+        ranked=ranked,
+        top_n=30,
+    )
+    if not watchlist:
+        print("[intraday] empty watchlist (no portfolio + no dashboard.csv yet) — nothing to do.")
+        return
+    print(f"[intraday] watching {len(watchlist)} tickers")
+
+    try:
+        data = fetch_intraday(watchlist)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[intraday] fetch failed ({exc}); keeping last state.")
+        return
+    if not data:
+        print("[intraday] no intraday data returned (market closed / rate-limited).")
+        return
+
+    table = compute_intraday_table(data, prior_closes)
+    n_firing = int((table["intraday_trigger_count"] > 0).sum()) if not table.empty else 0
+    print(f"[intraday] {len(table)} scored, {n_firing} with active triggers")
+
+    # Telegram alerts (deduped). Isolated — never crashes the cycle.
+    notifier = TelegramNotifier()
+    try:
+        messages = alerts_mod.intraday_alerts(state, table)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[intraday] alert generation failed: {exc}")
+        messages = []
+    if notifier.configured:
+        for m in messages:
+            try:
+                notifier.send_text(m)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[intraday] send failed: {exc}")
+        if messages:
+            print(f"[intraday] sent {len(messages)} alert(s)")
+    elif messages:
+        print(f"[intraday] {len(messages)} alert(s) suppressed — Telegram not configured")
+
+    # Write intraday.json for the dashboard Movers panel (PR D consumes it).
+    try:
+        _write_intraday_json(table)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[intraday] could not write intraday.json: {exc}")
+
+    # Persist state ONLY when the dedup record changed — keeps calm 1-2 min
+    # cycles from spamming commits onto main.
+    after = json.dumps(state.intraday_snapshot, sort_keys=True)
+    if after != before:
+        try:
+            save_state(state)
+            print("[intraday] state.enc updated (new alerts recorded)")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[intraday] could not save state: {exc}")
+    else:
+        print("[intraday] no new alerts — state unchanged")
+
+
+def _write_intraday_json(table) -> None:
+    """Serialize the movers table to intraday.json (sorted by RVOL)."""
+    import json
+    cols = ["ticker", "last_price", "rvol", "gap_pct", "roc_15m",
+            "price_vs_vwap", "orb_state", "session",
+            "intraday_trigger_label", "intraday_trigger_count"]
+    movers = []
+    if table is not None and not table.empty:
+        for _, r in table.iterrows():
+            rec = {}
+            for c in cols:
+                v = r.get(c)
+                if v is None or (isinstance(v, float) and v != v):  # NaN
+                    rec[c] = None
+                elif hasattr(v, "item"):
+                    rec[c] = v.item()
+                else:
+                    rec[c] = v
+            movers.append(rec)
+    payload = {
+        "generated_at": dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "movers": movers,
+    }
+    INTRADAY_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _run_notify_pipeline(regime: dict, results, *, force_digest: bool) -> None:
