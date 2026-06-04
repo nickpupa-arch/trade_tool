@@ -280,6 +280,36 @@ a.trade:hover { background: var(--accent); color: var(--bg); text-decoration: no
 .tv-pill-vol_surge { background: #A78BFA; }
 .tv-pills-wrap { margin-top: 6px; display: flex; flex-wrap: wrap; }
 
+/* ---- INTRADAY MOVERS PANEL ---- */
+.movers-wrap {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left: 3px solid #F43F5E;
+  border-radius: 10px;
+  overflow-x: auto;
+  margin-bottom: 24px;
+}
+.movers-wrap table { width: 100%; border-collapse: collapse; }
+.movers-wrap th, .movers-wrap td {
+  padding: 7px 10px; text-align: right; white-space: nowrap;
+  font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border);
+}
+.movers-wrap th { font-size: 11px; text-transform: uppercase; color: var(--text-faint); font-weight: 500; }
+.movers-wrap td:first-child, .movers-wrap th:first-child { text-align: left; }
+.movers-wrap tr.firing td { background: rgba(244, 63, 94, 0.07); }
+.movers-wrap td.tkr { font-weight: 700; color: var(--text); }
+.rvol-hot { color: #F43F5E; font-weight: 700; }
+.rvol-warm { color: var(--watch); font-weight: 600; }
+.itv-pill {
+  display: inline-block; padding: 1px 7px; margin: 1px 3px 1px 0;
+  font-size: 10px; font-weight: 700; border-radius: 999px; color: #0F172A;
+}
+.itv-pill-vol_spike { background: #A78BFA; }
+.itv-pill-gap_up { background: #38BDF8; }
+.itv-pill-momentum_burst { background: #F43F5E; color: #fff; }
+.itv-pill-orb_break_long { background: #22C55E; }
+.movers-meta { padding: 6px 10px; font-size: 11px; color: var(--text-faint); }
+
 /* ---- DISCLAIMER ---- */
 .disclaimer {
   margin-top: 32px;
@@ -502,6 +532,78 @@ _TV_PILL_LABELS = {
     "vol_surge": "📊 Vol",
 }
 
+_ITV_PILL_LABELS = {
+    "vol_spike": "📊 Vol",
+    "gap_up": "🔼 Gap",
+    "momentum_burst": "🚀 Burst",
+    "orb_break_long": "🟢 ORB",
+}
+
+
+def _itv_pills(label) -> str:
+    if not label or (isinstance(label, float) and pd.isna(label)):
+        return ""
+    html = ""
+    for name in [p.strip() for p in str(label).split(",") if p.strip()]:
+        html += f'<span class="itv-pill itv-pill-{name}">{_ITV_PILL_LABELS.get(name, name)}</span>'
+    return html
+
+
+def _rvol_cell(v) -> str:
+    if v is None or pd.isna(v):
+        return "—"
+    cls = "rvol-hot" if v >= 3 else ("rvol-warm" if v >= 2 else "")
+    return f'<span class="{cls}">{v:.1f}×</span>' if cls else f"{v:.1f}×"
+
+
+def _movers_panel(movers: pd.DataFrame | None, generated_at: dt.datetime) -> str:
+    """Render the intraday Movers panel. Empty/None → ''. Shows watched names
+    with active intraday triggers first, then highest-RVOL, capped at 15."""
+    if movers is None or movers.empty:
+        return ""
+    df = movers.copy()
+    # Only names with live intraday context (a session + an RVOL or a gap).
+    if "session" in df.columns:
+        df = df[df["session"].isin(["regular", "premarket"])]
+    has_signal = df.get("intraday_trigger_count", pd.Series([0] * len(df))).fillna(0) > 0
+    has_rvol = df.get("rvol", pd.Series([None] * len(df))).notna()
+    df = df[has_signal | has_rvol]
+    if df.empty:
+        return ""
+    # Firing first, then by RVOL desc.
+    df["_fire"] = (df.get("intraday_trigger_count", 0).fillna(0) > 0).astype(int)
+    df["_rv"] = df.get("rvol").fillna(-1)
+    df = df.sort_values(["_fire", "_rv"], ascending=[False, False]).head(15)
+
+    rows = ""
+    for _, r in df.iterrows():
+        firing = (r.get("intraday_trigger_count") or 0) > 0
+        gap = r.get("gap_pct")
+        roc = r.get("roc_15m")
+        pvv = r.get("price_vs_vwap")
+        tkr = r.get("ticker")
+        rows += (
+            f'<tr class="{"firing" if firing else ""}">'
+            f'<td class="tkr"><a href="https://www.tradingview.com/chart/?symbol={tkr}" target="_blank">{tkr}</a></td>'
+            f'<td>{_fmt_money(r.get("last_price"))}</td>'
+            f'<td>{_rvol_cell(r.get("rvol"))}</td>'
+            f'<td class="{_pct_class(gap)}">{_fmt_pct(gap)}</td>'
+            f'<td class="{_pct_class(roc)}">{_fmt_pct(roc)}</td>'
+            f'<td class="{_pct_class(pvv)}">{"VWAP+" if (pvv is not None and not pd.isna(pvv) and pvv >= 0) else ("VWAP−" if (pvv is not None and not pd.isna(pvv)) else "—")}</td>'
+            f'<td style="text-align:left">{_itv_pills(r.get("intraday_trigger_label"))}</td>'
+            f'</tr>'
+        )
+    return f"""
+  <h2 id="movers">Intraday movers</h2>
+  <p class="subtitle">Live fast-lane on your holdings + top-ranked names: relative volume, gaps, 15-min momentum, VWAP, opening-range breaks. Phone alerts fire at 1–2 min; this panel refreshes with the dashboard (~5 min).</p>
+  <div class="movers-wrap">
+    <table>
+      <thead><tr><th>Ticker</th><th>Price</th><th>RVOL</th><th>Gap</th><th>15m</th><th>VWAP</th><th>Signals</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+    <div class="movers-meta">Intraday data ~15 min delayed (Yahoo) · updated {generated_at.strftime('%I:%M %p')}</div>
+  </div>"""
+
 
 def _tv_trigger_pills(label: str) -> str:
     if not label or (isinstance(label, float) and pd.isna(label)):
@@ -523,11 +625,14 @@ def render(regime: dict,
            df: pd.DataFrame,
            out_path: str | Path,
            generated_at: dt.datetime | None = None,
-           sector_etfs: pd.DataFrame | None = None) -> Path:
+           sector_etfs: pd.DataFrame | None = None,
+           movers: pd.DataFrame | None = None) -> Path:
     """Render the full HTML dashboard and write it to out_path."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     generated_at = generated_at or dt.datetime.now()
+
+    movers_html = _movers_panel(movers, generated_at)
 
     regime_cls = {
         "Risk On": "regime-risk-on",
@@ -776,6 +881,8 @@ def render(regime: dict,
       <div class="value" style="font-size:14px">{regime['sizing']}</div>
     </div>
   </section>
+
+  {movers_html}
 
   {('<h2 id="sectors">Sector rankings</h2>' + '<p class="subtitle">11 SPDR sector ETFs run through the same screener. Top tile = strongest sector. Use it to spot regime rotation before individual names.</p>' + f'<div class="sectors">{sectors_html}</div>') if sectors_html else ''}
 
