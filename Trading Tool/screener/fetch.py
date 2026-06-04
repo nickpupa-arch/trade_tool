@@ -221,3 +221,70 @@ def filter_by_liquidity(price_data: dict[str, pd.DataFrame],
     scores.sort(key=lambda x: x[1], reverse=True)
     keep = {t for t, _ in scores[:top_n]}
     return {t: df for t, df in price_data.items() if t in keep}
+
+
+def fetch_intraday(tickers: list[str],
+                   interval: str = "5m",
+                   period: str = "1mo",
+                   chunk_size: int = 50,
+                   prepost: bool = True) -> dict[str, pd.DataFrame]:
+    """Download intraday OHLCV (default 5m, ~1 month) for the focused watchlist.
+
+    Used by the intraday "fast lane". Batched per chunk (one HTTP request per
+    ~50 tickers, far gentler on rate limits than per-symbol REST APIs).
+    `prepost=True` includes the 4:00-9:30 ET premarket session so gappers are
+    visible before the open. Returns {ticker: DataFrame} with a tz-aware
+    DatetimeIndex (keeps the full timestamp, unlike the daily _split_by_ticker).
+
+    No caching: intraday data must be fresh every cycle. yfinance limits 5m
+    history to ~60 days, so `period` stays well under that.
+    """
+    import yfinance as yf  # lazy import
+
+    out: dict[str, pd.DataFrame] = {}
+    tickers = [t for t in tickers if t]
+    for i in range(0, len(tickers), chunk_size):
+        chunk = tickers[i:i + chunk_size]
+        df = _download_with_retry(
+            lambda chunk=chunk: yf.download(
+                chunk,
+                interval=interval,
+                period=period,
+                group_by="ticker",
+                auto_adjust=True,
+                prepost=prepost,
+                threads=True,
+                progress=False,
+            ),
+            label=f"intraday {i+1}-{i+len(chunk)}",
+            attempts=3,
+        )
+        if df.empty:
+            continue
+        out.update(_split_intraday(df, chunk))
+    return out
+
+
+def _split_intraday(df: pd.DataFrame, chunk: list[str]) -> dict[str, pd.DataFrame]:
+    """Split a yfinance batched intraday frame into {ticker: OHLCV} keeping the
+    full timestamp index. Handles both the multi-ticker MultiIndex-column shape
+    and the single-ticker flat shape."""
+    out: dict[str, pd.DataFrame] = {}
+    cols = ("Open", "High", "Low", "Close", "Volume")
+    if isinstance(df.columns, pd.MultiIndex):
+        # Top level is the ticker symbol.
+        for t in dict.fromkeys(df.columns.get_level_values(0)):
+            try:
+                sub = df[t]
+            except KeyError:
+                continue
+            keep = [c for c in cols if c in sub.columns]
+            sub = sub[keep].dropna(how="all")
+            if not sub.empty:
+                out[str(t)] = sub
+    else:
+        keep = [c for c in cols if c in df.columns]
+        sub = df[keep].dropna(how="all")
+        if not sub.empty and chunk:
+            out[chunk[0]] = sub
+    return out
