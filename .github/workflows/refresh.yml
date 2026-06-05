@@ -1,19 +1,25 @@
 name: Refresh dashboard
 
+# RETIRED 2026-06-05 — Fly.io now runs the daily screener every 5 min and
+# serves the dashboard from /data. Workflow kept for manual fallback only.
+# This pipeline ALSO polled Telegram (process_updates) so leaving the cron
+# active would steal /add /list updates from Fly's bot (see bot.yml comment).
+#
+# Rollback: uncomment schedule + push triggers, stop Fly, re-enable cron-job.org.
+
 on:
-  # GitHub's schedule trigger is "best effort" — drops most runs under load.
-  # Kept as a fallback. The PRIMARY trigger is repository_dispatch fired by
-  # an external scheduler (e.g. cron-job.org), which has reliable timing.
-  schedule:
-    - cron: "*/15 13-22 * * 1-5"
+  # schedule:
+  #   - cron: "*/15 13-22 * * 1-5"
   workflow_dispatch:
   repository_dispatch:
     types: [refresh-dashboard]
-  push:
-    branches: [main]
-    paths:
-      - "Trading Tool/**"
-      - ".github/workflows/refresh.yml"
+  # push trigger disabled — every commit to main would steal Telegram updates
+  # from Fly's bot and trigger a redundant Pages deploy.
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "Trading Tool/**"
+  #     - ".github/workflows/refresh.yml"
 
 permissions:
   contents: write   # needs write so the workflow can commit state.enc back to main

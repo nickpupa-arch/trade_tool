@@ -1,15 +1,21 @@
 name: Bot poll (Telegram)
 
-# Fast Telegram command dispatch. Runs every minute during expanded market
-# hours so /add, /remove, /list, /help feel near-real-time (~60-90s).
-# Heavy work (screener, dashboard, Pages deploy) stays in refresh.yml.
+# Fast Telegram command dispatch. ORIGINALLY ran every minute during market
+# hours. RETIRED 2026-06-05 — Fly.io now runs the bot poller every 60s.
+#
+# Why retired: Telegram delivers each update to the FIRST poller that asks.
+# When this workflow + Fly's loop.py both polled the same bot token, they
+# raced for updates — half went to Fly's /data/state.enc, half went to the
+# repo's state.enc, and /list could never see all positions consistently.
+#
+# Workflow file kept around for manual fallback (workflow_dispatch). To
+# rollback to GitHub Actions: uncomment the schedule block, stop Fly with
+# `fly apps stop trade-tool`, and the next tick will pick up cleanly. See
+# DEPLOY.md for the full rollback procedure.
 
 on:
-  schedule:
-    # Every minute, Mon-Fri 12:00-23:00 UTC. That's roughly 7am-7pm ET in
-    # both DST regimes — covers pre-market through after-hours portfolio
-    # tweaks. Outside this window commands wait until the next session.
-    - cron: "* 12-23 * * 1-5"
+  # schedule:
+  #   - cron: "* 12-23 * * 1-5"
   workflow_dispatch:
 
 permissions:
