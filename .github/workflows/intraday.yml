@@ -1,17 +1,13 @@
 name: Intraday fast lane
 
-# Catches intraday momentum (RVOL spikes, gaps, ORB/VWAP breakouts) on a
-# focused watchlist and fires Telegram alerts. Runs far more often than the
-# daily refresh. GitHub's schedule trigger is lossy, so the PRIMARY driver is
-# repository_dispatch (type: intraday-refresh) fired by an external scheduler
-# (cron-job.org). The schedule below is a best-effort fallback.
+# RETIRED 2026-06-05 — Fly.io now runs the intraday cycle every 60s during
+# 4 AM-4 PM ET. Workflow kept for manual fallback only.
+#
+# Rollback: uncomment schedule, stop Fly, un-pause cron-job.org intraday-refresh.
 
 on:
-  schedule:
-    # Every 2 min, Mon-Fri 11:00-21:00 UTC (~7am-5pm ET both DST regimes —
-    # covers premarket gappers through the close). Best-effort; most ticks
-    # get dropped by GitHub, which is why repository_dispatch is primary.
-    - cron: "*/2 11-21 * * 1-5"
+  # schedule:
+  #   - cron: "*/2 11-21 * * 1-5"
   workflow_dispatch:
   repository_dispatch:
     types: [intraday-refresh]
