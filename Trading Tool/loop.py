@@ -144,7 +144,7 @@ def _daily_loop():
                 _run_subprocess(
                     "daily",
                     ["--notify", "--no-open", "--out", str(SITE_DIR / "dashboard.html")],
-                    timeout=300,
+                    timeout=600,  # generous: Yahoo rate-limiting + 500-ticker fetch
                 )
         SHUTDOWN.wait(DAILY_PERIOD)
 

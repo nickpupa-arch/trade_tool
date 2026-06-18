@@ -45,6 +45,56 @@ INTRADAY_JSON = HERE / "intraday.json"
 
 
 def main() -> None:
+    """Thin wrapper: parse args, dispatch, catch top-level crashes.
+
+    A crash inside the daily pipeline used to crash the subprocess (exit
+    non-zero), which on Fly's loop.py shows up as a `daily.errors` tick and
+    a stale dashboard. The fetch layer already retries Yahoo failures, and
+    individual panels (sectors, movers, notify) catch their own. But the
+    main pipeline — run_screener, the action-bucket / TV-trigger printouts,
+    render(), and the CSV write — was unprotected. Now they're wrapped:
+    any uncaught exception is logged to /data/last_daily_failure.log (or
+    the local cache dir if no volume), then we exit 0 so the orchestrator
+    keeps the last good dashboard live."""
+    try:
+        _dispatch()
+    except SystemExit:
+        raise  # argparse uses SystemExit on --help / parse errors — let through
+    except KeyboardInterrupt:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _log_uncaught_failure(exc)
+        return
+
+
+def _log_uncaught_failure(exc: BaseException) -> None:
+    """Persist a traceback so the user can debug after the fact.
+
+    Writes to /data/last_daily_failure.log when STATE_PATH points at a
+    Fly volume mount (production), otherwise to .cache/ locally. Always
+    prints to stdout too — the orchestrator forwards stdout to fly logs."""
+    import os
+    import traceback
+    tb = traceback.format_exc()
+    ts = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    msg = f"[run.py] uncaught {type(exc).__name__}: {exc}\n{tb}"
+    print(f"[skip] {msg}", flush=True)
+    print("[skip] Keeping the last good dashboard live; exiting cleanly.", flush=True)
+
+    state_path = os.environ.get("STATE_PATH")
+    log_dir = Path(state_path).parent if state_path else CACHE_DIR
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "last_daily_failure.log").write_text(
+            f"timestamp_utc: {ts}\n{msg}", encoding="utf-8"
+        )
+    except Exception as log_exc:  # noqa: BLE001
+        # Diagnostic logging must never fail the recovery path itself.
+        print(f"[skip] (could not persist failure log: {log_exc})", flush=True)
+
+
+def _dispatch() -> None:
+    """Original main() body — argparse + worker dispatch. Wrapped by main()."""
     ap = argparse.ArgumentParser(description="Real-time trend scanner")
     ap.add_argument("--top", type=int, default=500,
                     help="Top N tickers by 30-day dollar volume (default 500)")

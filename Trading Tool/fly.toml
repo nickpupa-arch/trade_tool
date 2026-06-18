@@ -43,4 +43,4 @@ kill_timeout = "15s"         # loop.py drains in-flight workers in <10s
 [[vm]]
   cpu_kind = "shared"
   cpus     = 1
-  memory   = "512mb"
+  memory   = "1gb"        # bumped from 512mb — pandas on 500-ticker batches
